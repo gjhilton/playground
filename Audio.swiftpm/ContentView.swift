@@ -23,6 +23,26 @@ struct ContentView: View {
                     .cornerRadius(10)
             }
             
+            if audioManager.totalDuration > 0 {
+                VStack(spacing: 6) {
+                    Slider(
+                        value: $audioManager.sliderTime,
+                        in: 0...audioManager.totalDuration,
+                        onEditingChanged: { isEditing in
+                            if !isEditing {
+                                audioManager.seekToCumulativeTime(audioManager.sliderTime)
+                            }
+                        }
+                    )
+                    .padding(.horizontal)
+                    
+                    Text("\(audioManager.formattedCumulativeTime) / \(audioManager.formattedTotalDuration)")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+                .padding(.horizontal)
+            }
+            
             Text("Playlist")
                 .font(.headline)
                 .padding(.top)
@@ -53,20 +73,53 @@ struct ContentView: View {
 
 class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private var audioPlayer: AVAudioPlayer?
+    private var timer: Timer?
+    
     @Published var isPlaying = false
     @Published var currentTrackName: String?
-    @Published var currentIndex: Int = -1 // -1 means nothing is playing
+    @Published var currentIndex: Int = -1
     
     @Published var playlist: [String] = []
+    @Published var trackDurations: [TimeInterval] = []
+    @Published var trackStartTimes: [TimeInterval] = []
+    @Published var currentTime: TimeInterval = 0
+    
+    // For slider binding
+    @Published var sliderTime: TimeInterval = 0
+    
+    var totalDuration: TimeInterval {
+        trackDurations.reduce(0, +)
+    }
+    
+    var cumulativeTime: TimeInterval {
+        guard currentIndex >= 0 else { return 0 }
+        let previousTime = trackStartTimes[safe: currentIndex] ?? 0
+        return previousTime + (audioPlayer?.currentTime ?? 0)
+    }
+    
+    var cumulativeProgress: Double {
+        guard totalDuration > 0 else { return 0 }
+        return cumulativeTime / totalDuration
+    }
+    
+    var formattedCumulativeTime: String {
+        formatTime(cumulativeTime)
+    }
+    
+    var formattedTotalDuration: String {
+        formatTime(totalDuration)
+    }
     
     override init() {
         super.init()
-        playlist = generateFilenames(from: 5) // Customize the number of tracks here
+        playlist = generateFilenames(from: 5)
+        loadTrackDurations()
     }
     
     func togglePlayback() {
         if isPlaying {
             audioPlayer?.pause()
+            stopTimer()
             isPlaying = false
         } else {
             if currentIndex == -1 {
@@ -82,11 +135,8 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         playCurrentTrack()
     }
     
-    private func playCurrentTrack() {
-        guard currentIndex < playlist.count else {
-            print("Reached end of playlist.")
-            return
-        }
+    private func playCurrentTrack(atTime offset: TimeInterval = 0) {
+        guard currentIndex < playlist.count else { return }
         
         let filename = playlist[currentIndex]
         let nameWithoutExtension = filename.replacingOccurrences(of: ".mp3", with: "")
@@ -98,12 +148,63 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         do {
             audioPlayer = try AVAudioPlayer(contentsOf: url)
             audioPlayer?.delegate = self
+            audioPlayer?.prepareToPlay()
+            audioPlayer?.currentTime = offset
             audioPlayer?.play()
             isPlaying = true
             currentTrackName = filename
+            startTimer()
         } catch {
             print("Error playing \(filename): \(error)")
         }
+    }
+    
+    func seekToCumulativeTime(_ time: TimeInterval) {
+        guard totalDuration > 0 else { return }
+        
+        // Find track index for target time
+        var index = 0
+        for (i, start) in trackStartTimes.enumerated() {
+            if i + 1 < trackStartTimes.count {
+                if time >= start && time < trackStartTimes[i + 1] {
+                    index = i
+                    break
+                }
+            } else {
+                index = i
+            }
+        }
+        
+        let startOffset = trackStartTimes[index]
+        let trackOffset = time - startOffset
+        
+        currentIndex = index
+        playCurrentTrack(atTime: trackOffset)
+    }
+    
+    private func loadTrackDurations() {
+        var durations: [TimeInterval] = []
+        
+        for filename in playlist {
+            let name = filename.replacingOccurrences(of: ".mp3", with: "")
+            guard let url = Bundle.main.url(forResource: name, withExtension: "mp3") else {
+                durations.append(0)
+                continue
+            }
+            do {
+                let player = try AVAudioPlayer(contentsOf: url)
+                durations.append(player.duration)
+            } catch {
+                print("Error loading duration for \(filename): \(error)")
+                durations.append(0)
+            }
+        }
+        
+        self.trackDurations = durations
+        self.trackStartTimes = durations.reduce(into: [TimeInterval]()) { result, duration in
+            let last = result.last ?? 0
+            result.append(last + duration)
+        }.map { $0 - durations[trackStartTimes.count == 0 ? 0 : trackStartTimes.count - 1] }
     }
     
     private func generateFilenames(from count: Int) -> [String] {
@@ -111,7 +212,20 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         return (1...count).reversed().map { String(format: "%03d.mp3", $0) }
     }
     
-    // Auto-advance when track finishes
+    private func startTimer() {
+        stopTimer()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+            self.currentTime = self.audioPlayer?.currentTime ?? 0
+            self.sliderTime = self.cumulativeTime
+            self.objectWillChange.send()
+        }
+    }
+    
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
+    }
+    
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         currentIndex += 1
         if currentIndex < playlist.count {
@@ -120,7 +234,23 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
             isPlaying = false
             currentTrackName = nil
             currentIndex = -1
+            stopTimer()
+            sliderTime = totalDuration
         }
+    }
+    
+    private func formatTime(_ time: TimeInterval) -> String {
+        let totalSeconds = Int(time)
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
+}
+
+// Array safe index helper
+extension Array {
+    subscript(safe index: Int) -> Element? {
+        return indices.contains(index) ? self[index] : nil
     }
 }
 
