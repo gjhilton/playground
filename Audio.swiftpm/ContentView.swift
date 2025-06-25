@@ -32,6 +32,7 @@ struct ContentView: View {
                             }
                         }
                     )
+                    .disabled(!audioManager.isPlaying) // ✅ Disable slider when paused
                     .padding(.horizontal)
                     
                     Text("\(audioManager.formattedCumulativeTime) / \(audioManager.formattedTotalDuration)")
@@ -121,7 +122,21 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
             if currentIndex == -1 {
                 currentIndex = 0
             }
-            playCurrentTrack()
+            if let player = audioPlayer, currentIndex >= 0 {
+                player.play()
+                isPlaying = true
+                
+                // ✅ Immediately sync UI to avoid jump
+                currentTime = player.currentTime
+                sliderTime = cumulativeTime
+                objectWillChange.send()
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    self.startTimer()
+                }
+            } else {
+                playCurrentTrack()
+            }
         }
     }
     
@@ -225,7 +240,7 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
     
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        stopTimer()  // Important to stop before transition
+        stopTimer()
         
         currentIndex += 1
         if currentIndex < playlist.count {
@@ -248,7 +263,6 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 }
 
-// Array safe index helper
 extension Array {
     subscript(safe index: Int) -> Element? {
         return indices.contains(index) ? self[index] : nil
