@@ -1,5 +1,3 @@
-// Full working code starts here
-
 import SwiftUI
 import AVFoundation
 
@@ -83,8 +81,6 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var trackDurations: [TimeInterval] = []
     @Published var trackStartTimes: [TimeInterval] = []
     @Published var currentTime: TimeInterval = 0
-    
-    // For slider binding
     @Published var sliderTime: TimeInterval = 0
     
     var totalDuration: TimeInterval {
@@ -153,7 +149,10 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
             audioPlayer?.play()
             isPlaying = true
             currentTrackName = filename
-            startTimer()
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.startTimer()
+            }
         } catch {
             print("Error playing \(filename): \(error)")
         }
@@ -162,7 +161,6 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
     func seekToCumulativeTime(_ time: TimeInterval) {
         guard totalDuration > 0 else { return }
         
-        // Find track index for target time
         var index = 0
         for (i, start) in trackStartTimes.enumerated() {
             if i + 1 < trackStartTimes.count {
@@ -201,10 +199,9 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
         
         self.trackDurations = durations
-        self.trackStartTimes = durations.reduce(into: [TimeInterval]()) { result, duration in
-            let last = result.last ?? 0
-            result.append(last + duration)
-        }.map { $0 - durations[trackStartTimes.count == 0 ? 0 : trackStartTimes.count - 1] }
+        self.trackStartTimes = durations.enumerated().map { index, _ in
+            durations.prefix(index).reduce(0, +)
+        }
     }
     
     private func generateFilenames(from count: Int) -> [String] {
@@ -215,7 +212,8 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private func startTimer() {
         stopTimer()
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-            self.currentTime = self.audioPlayer?.currentTime ?? 0
+            guard let player = self.audioPlayer else { return }
+            self.currentTime = player.currentTime
             self.sliderTime = self.cumulativeTime
             self.objectWillChange.send()
         }
@@ -227,14 +225,17 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
     
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        stopTimer()  // Important to stop before transition
+        
         currentIndex += 1
         if currentIndex < playlist.count {
-            playCurrentTrack()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.playCurrentTrack()
+            }
         } else {
             isPlaying = false
             currentTrackName = nil
             currentIndex = -1
-            stopTimer()
             sliderTime = totalDuration
         }
     }
@@ -253,5 +254,3 @@ extension Array {
         return indices.contains(index) ? self[index] : nil
     }
 }
-
-// Full working code ends here
