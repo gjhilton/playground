@@ -2,7 +2,8 @@ import SwiftUI
 import AVFoundation
 
 struct ContentView: View {
-    @StateObject private var audioManager = AudioPlayerManager()
+    private static let filenames = (1...5).reversed().map { String(format: "%03d.mp3", $0) }
+    @StateObject private var audioManager = AudioPlayerManager(playlist: filenames)
     
     var body: some View {
         VStack(spacing: 20) {
@@ -32,7 +33,7 @@ struct ContentView: View {
                             }
                         }
                     )
-                    .disabled(!audioManager.isPlaying) // ✅ Disable slider when paused
+                    .disabled(!audioManager.isPlaying)
                     .padding(.horizontal)
                     
                     Text("\(audioManager.formattedCumulativeTime) / \(audioManager.formattedTotalDuration)")
@@ -42,28 +43,42 @@ struct ContentView: View {
                 .padding(.horizontal)
             }
             
+            if audioManager.playlist.indices.contains(audioManager.currentIndex) {
+                Text("Track \(audioManager.currentIndex + 1) of \(audioManager.playlist.count)")
+                    .font(.subheadline)
+                    .padding(.top, 8)
+            }
+            
             Text("Playlist")
                 .font(.headline)
                 .padding(.top)
             
-            ScrollView {
-                VStack(spacing: 10) {
-                    ForEach(audioManager.playlist.indices, id: \.self) { index in
-                        let filename = audioManager.playlist[index]
-                        Button(action: {
-                            audioManager.playTrack(at: index)
-                        }) {
-                            Text(filename)
-                                .font(.body)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(audioManager.currentIndex == index ? Color.blue : Color.gray.opacity(0.2))
-                                .foregroundColor(audioManager.currentIndex == index ? .white : .primary)
-                                .cornerRadius(8)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 10) {
+                        ForEach(audioManager.playlist.indices, id: \.self) { index in
+                            let filename = audioManager.playlist[index]
+                            Button(action: {
+                                audioManager.playTrack(at: index)
+                            }) {
+                                Text(filename)
+                                    .font(.body)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(audioManager.currentIndex == index ? Color.blue : Color.gray.opacity(0.2))
+                                    .foregroundColor(audioManager.currentIndex == index ? .white : .primary)
+                                    .cornerRadius(8)
+                            }
+                            .id(index)
                         }
                     }
+                    .padding(.horizontal)
                 }
-                .padding(.horizontal)
+                .onChange(of: audioManager.currentIndex) { index in
+                    withAnimation {
+                        proxy.scrollTo(index, anchor: .center)
+                    }
+                }
             }
         }
         .padding()
@@ -78,7 +93,7 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var currentTrackName: String?
     @Published var currentIndex: Int = -1
     
-    @Published var playlist: [String] = []
+    @Published var playlist: [String]
     @Published var trackDurations: [TimeInterval] = []
     @Published var trackStartTimes: [TimeInterval] = []
     @Published var currentTime: TimeInterval = 0
@@ -107,9 +122,9 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         formatTime(totalDuration)
     }
     
-    override init() {
+    init(playlist: [String]) {
+        self.playlist = playlist
         super.init()
-        playlist = generateFilenames(from: 5)
         loadTrackDurations()
     }
     
@@ -125,8 +140,6 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
             if let player = audioPlayer, currentIndex >= 0 {
                 player.play()
                 isPlaying = true
-                
-                // ✅ Immediately sync UI to avoid jump
                 currentTime = player.currentTime
                 sliderTime = cumulativeTime
                 objectWillChange.send()
@@ -219,11 +232,6 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
     }
     
-    private func generateFilenames(from count: Int) -> [String] {
-        guard count > 0 else { return [] }
-        return (1...count).reversed().map { String(format: "%03d.mp3", $0) }
-    }
-    
     private func startTimer() {
         stopTimer()
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
@@ -263,6 +271,7 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 }
 
+// Array safe subscript helper
 extension Array {
     subscript(safe index: Int) -> Element? {
         return indices.contains(index) ? self[index] : nil
