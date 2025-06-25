@@ -8,21 +8,21 @@ struct PlaylistView: View {
     let onTrackTap: (Int) -> Void
     
     var body: some View {
-        VStack {
+        VStack(alignment: .leading, spacing: 10) {
             Text("Playlist")
                 .font(.headline)
-                .padding(.top)
+                .padding(.leading)
             
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(spacing: 10) {
+                    VStack(spacing: 8) {
                         ForEach(playlist.indices, id: \.self) { index in
                             let filename = playlist[index]
                             Button(action: {
                                 onTrackTap(index)
                             }) {
                                 Text(filename)
-                                    .frame(maxWidth: .infinity)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding()
                                     .background(currentIndex == index ? Color.blue : Color.gray.opacity(0.2))
                                     .foregroundColor(currentIndex == index ? .white : .primary)

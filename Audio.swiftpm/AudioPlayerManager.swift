@@ -1,18 +1,97 @@
 import Foundation
 import AVFoundation
 import Combine
+import UIKit
 
-final class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
-    @Published private(set) var isPlaying = false
+// MARK: - Playback State
+
+enum PlaybackState: Equatable {
+    case idle
+    case playing
+    case paused
+    case finished
+    case error(String)
+}
+
+// MARK: - AudioPlaying Protocol
+
+protocol AudioPlaying: AnyObject {
+    var currentTime: TimeInterval { get set }
+    var duration: TimeInterval { get }
+    
+    func prepareToPlay()
+    func play()
+    func pause()
+}
+
+// MARK: - AudioPlayerWrapper
+
+final class AudioPlayerWrapper: NSObject, AudioPlaying {
+    private let player: AVAudioPlayer
+    
+    var currentTime: TimeInterval {
+        get { player.currentTime }
+        set { player.currentTime = newValue }
+    }
+    
+    var duration: TimeInterval {
+        player.duration
+    }
+    
+    init(url: URL) throws {
+        self.player = try AVAudioPlayer(contentsOf: url)
+        super.init()
+    }
+    
+    func prepareToPlay() {
+        player.prepareToPlay()
+    }
+    
+    func play() {
+        player.play()
+    }
+    
+    func pause() {
+        player.pause()
+    }
+    
+    func setDelegate(_ delegate: AVAudioPlayerDelegate?) {
+        player.delegate = delegate
+    }
+    
+    func asAVAudioPlayer() -> AVAudioPlayer {
+        return player
+    }
+}
+
+// MARK: - Typealias for Factory
+
+typealias AudioPlayerFactory = (_ url: URL) throws -> AudioPlaying
+
+// MARK: - AudioPlayerManager
+
+final class AudioPlayerManager: NSObject, ObservableObject {
+    @Published private(set) var playbackState: PlaybackState = .idle
     @Published var sliderTime: TimeInterval = 0
     @Published var currentIndex: Int = -1
     @Published var playlist: [String]
+    @Published var lastError: String?
     
     private(set) var trackDurations: [TimeInterval] = []
     private(set) var trackStartTimes: [TimeInterval] = []
     
-    private var audioPlayer: AVAudioPlayer?
-    private var timer: Timer?
+    private var audioPlayer: AudioPlaying?
+    private var displayLink: CADisplayLink?
+    private let audioFactory: AudioPlayerFactory
+    
+    // MARK: - Init
+    
+    init(playlist: [String], audioFactory: @escaping AudioPlayerFactory = { try AudioPlayerWrapper(url: $0) }) {
+        self.playlist = playlist
+        self.audioFactory = audioFactory
+        super.init()
+        preloadDurationsAsync()
+    }
     
     var isValidTrackIndex: Bool {
         playlist.indices.contains(currentIndex)
@@ -36,26 +115,23 @@ final class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegat
         formatTime(totalDuration)
     }
     
-    init(playlist: [String]) {
-        self.playlist = playlist
-        super.init()
-        preloadDurations()
-    }
-    
-    // MARK: - Public Controls
+    // MARK: - Controls
     
     func togglePlayback() {
-        guard isValidTrackIndex || !isPlaying else { return }
+        guard isValidTrackIndex || playbackState != .playing else { return }
         
-        if isPlaying {
+        switch playbackState {
+        case .playing:
             pause()
-        } else {
+        case .paused:
+            resume()
+        case .idle, .finished, .error:
             if currentIndex == -1 { currentIndex = 0 }
-            resumeOrPlay()
+            startPlayback(atTime: 0)
         }
     }
     
-    func playTrack(at index: Int) {
+    func playTrack(_ index: Int) {
         guard playlist.indices.contains(index) else { return }
         currentIndex = index
         startPlayback(atTime: 0)
@@ -71,92 +147,98 @@ final class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegat
         startPlayback(atTime: offset)
     }
     
-    // MARK: - Internal Logic
+    // MARK: - Playback
     
-    private func preloadDurations() {
-        trackDurations = playlist.map { filename in
-            let name = filename.replacingOccurrences(of: ".mp3", with: "")
-            guard let url = Bundle.main.url(forResource: name, withExtension: "mp3"),
-                  let player = try? AVAudioPlayer(contentsOf: url)
-            else {
-                return 0
-            }
-            return player.duration
-        }
-        
-        trackStartTimes = trackDurations.enumerated().map { index, _ in
-            trackDurations.prefix(index).reduce(0, +)
-        }
-    }
-    
-    private func resumeOrPlay() {
-        if let player = audioPlayer {
-            player.play()
-            isPlaying = true
-            startTimer()
-        } else {
-            startPlayback(atTime: 0)
-        }
+    private func resume() {
+        audioPlayer?.play()
+        playbackState = .playing
+        startDisplayLink()
     }
     
     private func pause() {
         audioPlayer?.pause()
-        stopTimer()
-        isPlaying = false
+        playbackState = .paused
+        stopDisplayLink()
     }
     
     private func startPlayback(atTime offset: TimeInterval) {
-        stopTimer()
+        stopDisplayLink()
         
         guard isValidTrackIndex else { return }
         
         let filename = playlist[currentIndex]
         let baseName = filename.replacingOccurrences(of: ".mp3", with: "")
         guard let url = Bundle.main.url(forResource: baseName, withExtension: "mp3") else {
-            print("⚠️ Missing audio: \(filename)")
+            handleError("Missing audio file: \(filename)")
             return
         }
         
         do {
-            audioPlayer = try AVAudioPlayer(contentsOf: url)
-            audioPlayer?.delegate = self
-            audioPlayer?.prepareToPlay()
-            audioPlayer?.currentTime = offset
-            audioPlayer?.play()
-            isPlaying = true
-            startTimer()
-        } catch {
-            print("❌ Playback error: \(error)")
-        }
-    }
-    
-    private func startTimer() {
-        stopTimer()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-            guard let player = self.audioPlayer else { return }
-            self.sliderTime = self.cumulativeTime
-            self.objectWillChange.send()
-        }
-    }
-    
-    private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
-    }
-    
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        stopTimer()
-        currentIndex += 1
-        if currentIndex < playlist.count {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                self.startPlayback(atTime: 0)
+            let player = try audioFactory(url)
+            
+            if let wrapper = player as? AudioPlayerWrapper {
+                wrapper.setDelegate(self)
             }
-        } else {
-            isPlaying = false
-            currentIndex = -1
-            sliderTime = totalDuration
+            
+            player.prepareToPlay()
+            player.currentTime = offset
+            self.audioPlayer = player
+            player.play()
+            playbackState = .playing
+            startDisplayLink()
+        } catch {
+            handleError("Playback failed: \(error.localizedDescription)")
         }
     }
+    
+    private func handleError(_ message: String) {
+        lastError = message
+        playbackState = .error(message)
+    }
+    
+    // MARK: - Duration Preload
+    
+    private func preloadDurationsAsync() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let durations = self.playlist.map { filename -> TimeInterval in
+                let name = filename.replacingOccurrences(of: ".mp3", with: "")
+                guard let url = Bundle.main.url(forResource: name, withExtension: "mp3"),
+                      let player = try? AVAudioPlayer(contentsOf: url) else {
+                    return 0
+                }
+                return player.duration
+            }
+            
+            let startTimes = durations.enumerated().map { index, _ in
+                durations.prefix(index).reduce(0, +)
+            }
+            
+            DispatchQueue.main.async {
+                self.trackDurations = durations
+                self.trackStartTimes = startTimes
+            }
+        }
+    }
+    
+    // MARK: - DisplayLink for UI Sync
+    
+    private func startDisplayLink() {
+        stopDisplayLink()
+        displayLink = CADisplayLink(target: self, selector: #selector(updateProgress))
+        displayLink?.add(to: .main, forMode: .common)
+    }
+    
+    private func stopDisplayLink() {
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+    
+    @objc private func updateProgress() {
+        sliderTime = cumulativeTime
+        objectWillChange.send()
+    }
+    
+    // MARK: - Time Format
     
     private func formatTime(_ time: TimeInterval) -> String {
         let minutes = Int(time) / 60
@@ -165,7 +247,25 @@ final class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegat
     }
 }
 
-// MARK: - Safe Array Access
+// MARK: - AVAudioPlayerDelegate
+
+extension AudioPlayerManager: AVAudioPlayerDelegate {
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        stopDisplayLink()
+        currentIndex += 1
+        if currentIndex < playlist.count {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.startPlayback(atTime: 0)
+            }
+        } else {
+            playbackState = .finished
+            currentIndex = -1
+            sliderTime = totalDuration
+        }
+    }
+}
+
+// MARK: - Safe Array Access Helper
 
 extension Array {
     subscript(safe index: Index) -> Element? {
