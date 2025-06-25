@@ -23,10 +23,28 @@ struct ContentView: View {
                     .cornerRadius(10)
             }
             
-            if let currentTrack = audioManager.currentTrackName {
-                Text("Now Playing: \(currentTrack)")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
+            Text("Playlist")
+                .font(.headline)
+                .padding(.top)
+            
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(audioManager.playlist.indices, id: \.self) { index in
+                        let filename = audioManager.playlist[index]
+                        Button(action: {
+                            audioManager.playTrack(at: index)
+                        }) {
+                            Text(filename)
+                                .font(.body)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(audioManager.currentIndex == index ? Color.blue : Color.gray.opacity(0.2))
+                                .foregroundColor(audioManager.currentIndex == index ? .white : .primary)
+                                .cornerRadius(8)
+                        }
+                    }
+                }
+                .padding(.horizontal)
             }
         }
         .padding()
@@ -37,13 +55,13 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private var audioPlayer: AVAudioPlayer?
     @Published var isPlaying = false
     @Published var currentTrackName: String?
+    @Published var currentIndex: Int = -1 // -1 means nothing is playing
     
-    private var playlist: [String] = []
-    private var currentIndex = 0
+    @Published var playlist: [String] = []
     
     override init() {
         super.init()
-        playlist = generateFilenames(from: 5)
+        playlist = generateFilenames(from: 5) // Customize the number of tracks here
     }
     
     func togglePlayback() {
@@ -51,8 +69,17 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
             audioPlayer?.pause()
             isPlaying = false
         } else {
+            if currentIndex == -1 {
+                currentIndex = 0
+            }
             playCurrentTrack()
         }
+    }
+    
+    func playTrack(at index: Int) {
+        guard index >= 0 && index < playlist.count else { return }
+        currentIndex = index
+        playCurrentTrack()
     }
     
     private func playCurrentTrack() {
@@ -84,7 +111,7 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         return (1...count).reversed().map { String(format: "%03d.mp3", $0) }
     }
     
-    // Automatically play the next track
+    // Auto-advance when track finishes
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         currentIndex += 1
         if currentIndex < playlist.count {
@@ -92,6 +119,7 @@ class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         } else {
             isPlaying = false
             currentTrackName = nil
+            currentIndex = -1
         }
     }
 }
