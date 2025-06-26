@@ -1,275 +1,190 @@
-import SwiftUI
 import UIKit
+import SwiftUI
 
-// MARK: - Data Models
+struct ContentView: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> UIViewController {
+        MapViewController()
+    }
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
+}
 
-struct Waypoint {
+// MARK: - Model
+
+struct Site {
     let id: Int
-    let title: String
-    let content: String
+    let name: String
+    let position: CGPoint
+    let progress: Double
 }
 
-struct WaypointState: Codable {
-    var progress: Float  // 0.0 ... 1.0
-    var isLocked: Bool
+// MARK: - MapViewDelegate
+
+protocol MapViewDelegate: AnyObject {
+    func mapView(_ mapView: MapView, didSelect site: Site)
 }
 
-// MARK: - ViewModel
+// MARK: - MapView
 
-class MapViewModel {
-    private(set) var waypoints: [Waypoint]
-    private(set) var states: [WaypointState]
+class MapView: UIView {
+    private let sites: [Site]
+    weak var delegate: MapViewDelegate?
     
-    init() {
-        let lorem = """
-        Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. \
-        Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. \
-        Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. \
-        Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
-        """
-        let longText = Array(repeating: lorem, count: 80).joined(separator: "\n\n")
-        
-        waypoints = []
-        states = []
-        for i in 0..<10 {
-            waypoints.append(Waypoint(id: i, title: "Waypoint \(i + 1)", content: longText))
-            states.append(WaypointState(progress: 0, isLocked: i != 0)) // Only first unlocked
+    init(sites: [Site]) {
+        self.sites = sites
+        super.init(frame: .zero)
+        backgroundColor = .white
+        setupDots()
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    private func setupDots() {
+        for site in sites {
+            let dot = UIButton(type: .system)
+            dot.backgroundColor = .systemBlue
+            dot.layer.cornerRadius = 15
+            dot.frame = CGRect(x: site.position.x, y: site.position.y, width: 30, height: 30)
+            dot.tag = site.id
+            dot.addTarget(self, action: #selector(dotTapped(_:)), for: .touchUpInside)
+            addSubview(dot)
         }
     }
     
-    func updateProgress(for waypointId: Int, progress: Float) {
-        guard states.indices.contains(waypointId) else { return }
-        if states[waypointId].isLocked { return }
-        
-        let clampedProgress = max(0, min(progress, 1))
-        let previousProgress = states[waypointId].progress
-        states[waypointId].progress = clampedProgress
-        
-        if previousProgress < 1 && clampedProgress >= 1 {
-            unlockNext(after: waypointId)
-        }
-    }
-    
-    private func unlockNext(after index: Int) {
-        let nextIndex = index + 1
-        guard states.indices.contains(nextIndex) else { return }
-        if states[nextIndex].isLocked {
-            states[nextIndex].isLocked = false
-        }
+    @objc private func dotTapped(_ sender: UIButton) {
+        guard let site = sites.first(where: { $0.id == sender.tag }) else { return }
+        delegate?.mapView(self, didSelect: site)
     }
 }
 
-// MARK: - Waypoint View (larger dot + circular progress)
+// MARK: - MapViewController
 
-class WaypointView: UIView {
-    private let dotDiameter: CGFloat = 60  // doubled size
-    private let circleLayer = CAShapeLayer()
-    private let progressLayer = CAShapeLayer()
-    private let iconLayer = CATextLayer()
+class MapViewController: UIViewController {
     
-    var waypoint: Waypoint {
-        didSet { updateAppearance() }
-    }
-    var state: WaypointState {
-        didSet { updateAppearance() }
-    }
+    private let sites: [Site] = [
+        Site(id: 1, name: "Site A", position: CGPoint(x: 50, y: 100), progress: 0.3),
+        Site(id: 2, name: "Site B", position: CGPoint(x: 120, y: 200), progress: 0.75),
+        Site(id: 3, name: "Site C", position: CGPoint(x: 200, y: 50), progress: 0.0),
+        Site(id: 4, name: "Site D", position: CGPoint(x: 300, y: 150), progress: 1.0),
+        Site(id: 5, name: "Site E", position: CGPoint(x: 250, y: 250), progress: 0.6)
+    ]
     
-    var tapHandler: (() -> Void)?
+    private lazy var mapView = MapView(sites: sites)
     
-    init(waypoint: Waypoint, state: WaypointState) {
-        self.waypoint = waypoint
-        self.state = state
-        let frame = CGRect(origin: .zero, size: CGSize(width: dotDiameter, height: dotDiameter))
-        super.init(frame: frame)
-        setupLayers()
-        updateAppearance()
-        
-        let tap = UITapGestureRecognizer(target: self, action: #selector(tapped))
-        addGestureRecognizer(tap)
-        isUserInteractionEnabled = true
+    override func loadView() {
+        view = mapView
     }
     
-    required init?(coder: NSCoder) { fatalError() }
-    
-    private func setupLayers() {
-        let center = CGPoint(x: bounds.midX, y: bounds.midY)
-        let radius = (dotDiameter - 12) / 2  // more inset for stroke
-        
-        // Background circle
-        circleLayer.path = UIBezierPath(arcCenter: center, radius: radius, startAngle: 0, endAngle: CGFloat.pi * 2, clockwise: true).cgPath
-        circleLayer.fillColor = UIColor.red.cgColor
-        layer.addSublayer(circleLayer)
-        
-        // Progress ring
-        let startAngle = -CGFloat.pi / 2
-        let endAngle = startAngle + CGFloat.pi * 2
-        let circlePath = UIBezierPath(arcCenter: center, radius: radius, startAngle: startAngle, endAngle: endAngle, clockwise: true)
-        progressLayer.path = circlePath.cgPath
-        progressLayer.strokeColor = UIColor.black.cgColor
-        progressLayer.fillColor = UIColor.clear.cgColor
-        progressLayer.lineWidth = 6  // thicker ring
-        progressLayer.strokeEnd = 0
-        layer.addSublayer(progressLayer)
-        
-        // Icon layer (lock or checkmark)
-        iconLayer.alignmentMode = .center
-        iconLayer.contentsScale = UIScreen.main.scale
-        iconLayer.fontSize = 36  // bigger icon
-        iconLayer.frame = bounds
-        iconLayer.foregroundColor = UIColor.black.cgColor
-        layer.addSublayer(iconLayer)
-    }
-    
-    private func updateAppearance() {
-        if state.isLocked {
-            circleLayer.fillColor = UIColor.gray.cgColor
-            progressLayer.strokeEnd = 0
-            iconLayer.string = "🔒"
-        } else if state.progress >= 1.0 {
-            circleLayer.fillColor = UIColor.black.cgColor
-            progressLayer.strokeEnd = 1.0
-            iconLayer.string = "✔︎"
-        } else {
-            circleLayer.fillColor = UIColor.red.cgColor
-            progressLayer.strokeEnd = CGFloat(state.progress)
-            iconLayer.string = nil
-        }
-    }
-    
-    @objc private func tapped() {
-        if !state.isLocked {
-            tapHandler?()
-        }
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        mapView.delegate = self
     }
 }
 
-// MARK: - ContentViewController
+extension MapViewController: MapViewDelegate {
+    func mapView(_ mapView: MapView, didSelect site: Site) {
+        let siteVC = SiteViewController(site: site)
+        siteVC.modalPresentationStyle = .fullScreen
+        present(siteVC, animated: true)
+    }
+}
 
-class ContentViewController: UIViewController, UIScrollViewDelegate {
-    private var viewModel = MapViewModel()
-    private var waypointViews: [WaypointView] = []
-    private var contentViewContainer: UIView?
+// MARK: - SiteViewController
+
+class SiteViewController: UIViewController {
     
-    private var currentWaypointIndex: Int?
+    private let site: Site
+    
+    init(site: Site) {
+        self.site = site
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    private let scrollView = UIScrollView()
+    private let contentView = UIView()
+    private let titleLabel = UILabel()
+    private let textView = UITextView()
+    private let backButton = UIButton(type: .system)
     
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .white
-        layoutMap()
+        setupUI()
     }
     
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        layoutMap()
+    private func setupUI() {
+        // Back Button
+        backButton.setTitle("Back", for: .normal)
+        backButton.titleLabel?.font = UIFont.boldSystemFont(ofSize: 18)
+        backButton.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
+        backButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(backButton)
+        
+        // Title Label
+        titleLabel.text = site.name
+        titleLabel.font = UIFont.boldSystemFont(ofSize: 24)
+        titleLabel.textColor = .black
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(titleLabel)
+        
+        // ScrollView and TextView setup
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scrollView)
+        
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.addSubview(contentView)
+        
+        textView.isEditable = false
+        textView.isScrollEnabled = false
+        textView.textColor = .black
+        textView.font = UIFont.systemFont(ofSize: 16)
+        textView.text = loremIpsumText()
+        textView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(textView)
+        
+        // Constraints
+        NSLayoutConstraint.activate([
+            backButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            backButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            
+            titleLabel.centerYAnchor.constraint(equalTo: backButton.centerYAnchor),
+            titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            
+            scrollView.topAnchor.constraint(equalTo: backButton.bottomAnchor, constant: 12),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            
+            contentView.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            contentView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+            contentView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            contentView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            
+            contentView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+            
+            textView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            textView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            textView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            textView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+        ])
     }
     
-    private func layoutMap() {
-        waypointViews.forEach { $0.removeFromSuperview() }
-        waypointViews.removeAll()
-        
-        let spacing: CGFloat = 110 // spacing for bigger dots
-        let startX: CGFloat = 60
-        let centerY = view.bounds.midY
-        
-        for i in 0..<viewModel.waypoints.count {
-            let wp = viewModel.waypoints[i]
-            let state = viewModel.states[i]
-            let wpView = WaypointView(waypoint: wp, state: state)
-            wpView.center = CGPoint(x: startX + CGFloat(i) * spacing, y: centerY)
-            wpView.tapHandler = { [weak self] in
-                self?.showContent(forIndex: i)
-            }
-            view.addSubview(wpView)
-            waypointViews.append(wpView)
-        }
+    @objc private func backTapped() {
+        dismiss(animated: true)
     }
     
-    private func showContent(forIndex index: Int) {
-        currentWaypointIndex = index
-        
-        contentViewContainer?.removeFromSuperview()
-        
-        let containerWidth: CGFloat = 320
-        let containerHeight: CGFloat = view.bounds.height * 0.8
-        let containerX = (view.bounds.width - containerWidth) / 2
-        let containerY = (view.bounds.height - containerHeight) / 2
-        
-        let container = UIView(frame: CGRect(x: containerX, y: containerY, width: containerWidth, height: containerHeight))
-        container.backgroundColor = UIColor(white: 0.95, alpha: 1)
-        container.layer.cornerRadius = 12
-        container.layer.shadowColor = UIColor.black.cgColor
-        container.layer.shadowOpacity = 0.3
-        container.layer.shadowOffset = CGSize(width: 0, height: 2)
-        container.layer.shadowRadius = 6
-        view.addSubview(container)
-        contentViewContainer = container
-        
-        // ScrollView with delegate to track scrolling
-        let scrollView = UIScrollView(frame: container.bounds.inset(by: UIEdgeInsets(top: 40, left: 10, bottom: 10, right: 10)))
-        scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        scrollView.delegate = self
-        container.addSubview(scrollView)
-        
-        let waypoint = viewModel.waypoints[index]
-        let label = UILabel()
-        label.numberOfLines = 0
-        label.font = UIFont.systemFont(ofSize: 16)
-        label.text = waypoint.content
-        let maxLabelWidth = scrollView.bounds.width
-        let size = label.sizeThatFits(CGSize(width: maxLabelWidth, height: CGFloat.greatestFiniteMagnitude))
-        label.frame = CGRect(origin: .zero, size: size)
-        scrollView.addSubview(label)
-        scrollView.contentSize = size
-        
-        // Set initial scroll position to previous progress
-        let state = viewModel.states[index]
-        let scrollOffsetY = CGFloat(state.progress) * max(0, scrollView.contentSize.height - scrollView.bounds.height)
-        scrollView.setContentOffset(CGPoint(x: 0, y: scrollOffsetY), animated: false)
-        
-        // Back button
-        let backButton = UIButton(type: .system)
-        backButton.setTitle("Back to Map", for: .normal)
-        backButton.titleLabel?.font = UIFont.boldSystemFont(ofSize: 16)
-        backButton.frame = CGRect(x: 12, y: 5, width: 120, height: 30)
-        backButton.addTarget(self, action: #selector(closeContent), for: .touchUpInside)
-        container.addSubview(backButton)
+    private func loremIpsumText() -> String {
+        // Generate ~3000 words of Lorem Ipsum
+        let lorem = """
+        Lorem ipsum dolor sit amet, consectetur adipiscing elit. ...
+        """
+        // For brevity, I’ll repeat a base Lorem Ipsum paragraph to get close to 3000 words
+        let baseParagraph = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. "
+        return String(repeating: baseParagraph, count: 3000 / 20) // approx 20 words per paragraph
     }
-    
-    @objc private func closeContent() {
-        contentViewContainer?.removeFromSuperview()
-        contentViewContainer = nil
-        currentWaypointIndex = nil
-    }
-    
-    // MARK: - UIScrollViewDelegate
-    
-    func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard let index = currentWaypointIndex else { return }
-        let contentHeight = scrollView.contentSize.height
-        let visibleHeight = scrollView.bounds.height
-        if contentHeight <= visibleHeight { return }
-        
-        let progress = Float(scrollView.contentOffset.y / (contentHeight - visibleHeight))
-        viewModel.updateProgress(for: index, progress: progress)
-        
-        // Update dot UI progress ring live
-        waypointViews[index].state = viewModel.states[index]
-    }
-}
-
-// MARK: - SwiftUI Wrapper for Playground
-
-struct ContentView: View {
-    var body: some View {
-        UIKitWrapper()
-            .edgesIgnoringSafeArea(.all)
-    }
-}
-
-struct UIKitWrapper: UIViewControllerRepresentable {
-    func makeUIViewController(context: Context) -> UIViewController {
-        ContentViewController()
-    }
-    
-    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
 }
