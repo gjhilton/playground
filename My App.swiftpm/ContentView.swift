@@ -27,12 +27,16 @@ protocol MapViewDelegate: AnyObject {
 
 class MapView: UIView {
     private let sites: [Site]
+    private var unlockedSiteIDs: Set<Int> = []
+    
     weak var delegate: MapViewDelegate?
+    
+    private var dotButtons: [UIButton] = []
     
     init(sites: [Site]) {
         self.sites = sites
         super.init(frame: .zero)
-        backgroundColor = .white
+        backgroundColor = .black
         setupDots()
     }
     
@@ -40,20 +44,45 @@ class MapView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
     
+    func updateUnlockedSites(_ unlocked: Set<Int>) {
+        unlockedSiteIDs = unlocked
+        updateDotsAppearance()
+    }
+    
     private func setupDots() {
         for site in sites {
             let dot = UIButton(type: .system)
-            dot.backgroundColor = .systemBlue
-            dot.layer.cornerRadius = 15
             dot.frame = CGRect(x: site.position.x, y: site.position.y, width: 30, height: 30)
             dot.tag = site.id
+            dot.layer.cornerRadius = 15
             dot.addTarget(self, action: #selector(dotTapped(_:)), for: .touchUpInside)
             addSubview(dot)
+            dotButtons.append(dot)
+        }
+        updateDotsAppearance()
+    }
+    
+    private func updateDotsAppearance() {
+        for dot in dotButtons {
+            guard let site = sites.first(where: { $0.id == dot.tag }) else { continue }
+            let unlocked = unlockedSiteIDs.contains(site.id)
+            dot.isEnabled = unlocked
+            
+            if unlocked {
+                dot.backgroundColor = .systemBlue
+                dot.setImage(nil, for: .normal)
+            } else {
+                dot.backgroundColor = .gray
+                let lock = UIImage(systemName: "lock.fill")
+                dot.setImage(lock, for: .normal)
+                dot.tintColor = .white
+            }
         }
     }
     
     @objc private func dotTapped(_ sender: UIButton) {
-        guard let site = sites.first(where: { $0.id == sender.tag }) else { return }
+        guard unlockedSiteIDs.contains(sender.tag),
+              let site = sites.first(where: { $0.id == sender.tag }) else { return }
         delegate?.mapView(self, didSelect: site)
     }
 }
@@ -61,7 +90,6 @@ class MapView: UIView {
 // MARK: - MapViewController
 
 class MapViewController: UIViewController {
-    
     private let sites: [Site] = [
         Site(id: 1, name: "Site A", position: CGPoint(x: 50, y: 100), progress: 0.3),
         Site(id: 2, name: "Site B", position: CGPoint(x: 120, y: 200), progress: 0.75),
@@ -72,6 +100,9 @@ class MapViewController: UIViewController {
     
     private lazy var mapView = MapView(sites: sites)
     
+    // Track unlocked sites IDs, start with only first unlocked
+    private var unlockedSites: Set<Int> = []
+    
     override func loadView() {
         view = mapView
     }
@@ -79,6 +110,24 @@ class MapViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         mapView.delegate = self
+        unlockInitialSite()
+    }
+    
+    private func unlockInitialSite() {
+        guard let firstSite = sites.first else { return }
+        unlockedSites = [firstSite.id]
+        mapView.updateUnlockedSites(unlockedSites)
+    }
+    
+    private func unlockNextSite(after site: Site) {
+        if let currentIndex = sites.firstIndex(where: { $0.id == site.id }),
+           currentIndex + 1 < sites.count {
+            let nextSite = sites[currentIndex + 1]
+            if !unlockedSites.contains(nextSite.id) {
+                unlockedSites.insert(nextSite.id)
+                mapView.updateUnlockedSites(unlockedSites)
+            }
+        }
     }
 }
 
@@ -86,14 +135,15 @@ extension MapViewController: MapViewDelegate {
     func mapView(_ mapView: MapView, didSelect site: Site) {
         let siteVC = SiteViewController(site: site)
         siteVC.modalPresentationStyle = .fullScreen
-        present(siteVC, animated: true)
+        present(siteVC, animated: true) { [weak self] in
+            self?.unlockNextSite(after: site)
+        }
     }
 }
 
 // MARK: - SiteViewController
 
 class SiteViewController: UIViewController {
-    
     private let site: Site
     
     init(site: Site) {
@@ -113,26 +163,24 @@ class SiteViewController: UIViewController {
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .white
+        view.backgroundColor = .black
         setupUI()
     }
     
     private func setupUI() {
-        // Back Button
         backButton.setTitle("Back", for: .normal)
+        backButton.setTitleColor(.white, for: .normal)
         backButton.titleLabel?.font = UIFont.boldSystemFont(ofSize: 18)
         backButton.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
         backButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(backButton)
         
-        // Title Label
         titleLabel.text = site.name
         titleLabel.font = UIFont.boldSystemFont(ofSize: 24)
-        titleLabel.textColor = .black
+        titleLabel.textColor = .white
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(titleLabel)
         
-        // ScrollView and TextView setup
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scrollView)
         
@@ -141,13 +189,13 @@ class SiteViewController: UIViewController {
         
         textView.isEditable = false
         textView.isScrollEnabled = false
-        textView.textColor = .black
+        textView.textColor = .white
+        textView.backgroundColor = .clear
         textView.font = UIFont.systemFont(ofSize: 16)
         textView.text = loremIpsumText()
         textView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(textView)
         
-        // Constraints
         NSLayoutConstraint.activate([
             backButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
             backButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
@@ -179,12 +227,7 @@ class SiteViewController: UIViewController {
     }
     
     private func loremIpsumText() -> String {
-        // Generate ~3000 words of Lorem Ipsum
-        let lorem = """
-        Lorem ipsum dolor sit amet, consectetur adipiscing elit. ...
-        """
-        // For brevity, I’ll repeat a base Lorem Ipsum paragraph to get close to 3000 words
         let baseParagraph = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. "
-        return String(repeating: baseParagraph, count: 3000 / 20) // approx 20 words per paragraph
+        return String(repeating: baseParagraph, count: 150)
     }
 }
