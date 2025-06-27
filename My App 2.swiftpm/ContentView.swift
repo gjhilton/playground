@@ -4,23 +4,44 @@ import RealityKit
 struct ContentView: View {
     var body: some View {
         RealityView { content in
-            // Create a flat white plane
+            // Load image from asset catalog
+            guard let uiImage = UIImage(named: "map"),
+                  let cgImage = uiImage.cgImage else {
+                print("❌ Could not load map.png from asset catalog")
+                return
+            }
+            
+            // Create texture with semantic
+            let texture = try? TextureResource.generate(
+                from: cgImage,
+                options: .init(semantic: .color)
+            )
+            
+            // Build material
+            var material = SimpleMaterial()
+            if let texture = texture {
+                material.baseColor = .texture(texture)
+            } else {
+                material.baseColor = .color(.white)
+                print("⚠️ Using fallback color")
+            }
+            
+            // Create the plane
             let mesh = MeshResource.generatePlane(width: 1.0, depth: 1.0)
-            let material = SimpleMaterial(color: .white, isMetallic: false)
             let plane = ModelEntity(mesh: mesh, materials: [material])
             plane.position = [0, 0, 0]
             
-            // Create an anchor at the world origin
+            // Anchor at origin
             let anchor = AnchorEntity(world: .zero)
             anchor.addChild(plane)
             
-            // Add a camera
+            // Camera
             let camera = PerspectiveCamera()
-            camera.position = [0, 1.0, 2.0]
+            camera.position = [0, 1, 2]
             camera.look(at: [0, 0, 0], from: camera.position, relativeTo: nil)
             anchor.addChild(camera)
             
-            // Add directional light
+            // Light
             let light = DirectionalLight()
             light.light.intensity = 1000
             light.light.color = .white
@@ -28,7 +49,7 @@ struct ContentView: View {
             light.look(at: [0, 0, 0], from: light.position, relativeTo: nil)
             anchor.addChild(light)
             
-            // Add everything to the scene
+            // Add to scene
             content.add(anchor)
         }
     }
