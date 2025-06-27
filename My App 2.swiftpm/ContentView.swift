@@ -2,11 +2,16 @@ import SwiftUI
 import RealityKit
 
 struct ContentView: View {
-    @State private var cameraAngle: Float = 0
+    @State private var cameraAngle: Float = 0 // Camera rotation angle (around Y axis)
+    @State private var verticalAngle: Float = 0.5 // Vertical rotation angle (from horizontal plane)
     
-    let dist: Float = 2.0
-    let centerOfInterest: SIMD3<Float> = [0, 0, 0]
-    let dragSensitivity: Float = 0.000125 // extremely slow rotation
+    @State private var lastDragValue: CGFloat = 0 // For drag tracking
+    
+    let dist: Float = 2.0 // Orbit radius (fixed)
+    let centerOfInterest: SIMD3<Float> = [0, 0, 0] // The center of orbit
+    let dragSensitivity: Float = 0.002 // Sensitivity for the horizontal drag
+    let verticalDragSensitivity: Float = 0.002 // Sensitivity for the vertical drag
+    let minY: Float = 0.25 // Minimum allowed y value (camera height)
     
     var body: some View {
         RealityView { content in
@@ -47,28 +52,35 @@ struct ContentView: View {
                 return
             }
             
-            cameraAngle.formTruncatingRemainder(dividingBy: 2 * .pi)
-            if cameraAngle < 0 {
-                cameraAngle += 2 * .pi
-            }
+            // Calculate the camera's position using spherical coordinates
+            let x = dist * cos(verticalAngle) * cos(cameraAngle)
+            let y = dist * sin(verticalAngle)
+            let z = dist * cos(verticalAngle) * sin(cameraAngle)
             
-            let x = dist * cos(cameraAngle)
-            let z = dist * sin(cameraAngle)
-            let y: Float = 1.0
             let cameraPosition = SIMD3<Float>(x, y, z)
             
+            // Update camera position
             camera.position = cameraPosition
             camera.look(at: centerOfInterest, from: cameraPosition, relativeTo: nil)
             
-            let lightPos = SIMD3<Float>(x, y + 1, z)
+            // Position light above the camera
+            let lightPos = cameraPosition + SIMD3<Float>(0, 1, 0)
             light.position = lightPos
             light.look(at: centerOfInterest, from: lightPos, relativeTo: nil)
         }
         .gesture(
             DragGesture()
                 .onChanged { value in
-                    let dragAmount = Float(value.translation.width)
-                    cameraAngle -= dragAmount * dragSensitivity
+                    // Horizontal drag (left-right)
+                    let horizontalDragAmount = Float(value.translation.width)
+                    cameraAngle -= horizontalDragAmount * dragSensitivity
+                    
+                    // Vertical drag (up-down) - this should control the vertical angle of orbit
+                    let verticalDragAmount = Float(value.translation.height)
+                    verticalAngle -= verticalDragAmount * verticalDragSensitivity
+                    
+                    // Constrain vertical angle between 0.25 and 1.5 radians to avoid flipping
+                    verticalAngle = min(max(verticalAngle, 0.25), 1.5)
                 }
         )
     }
