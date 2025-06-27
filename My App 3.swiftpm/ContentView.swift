@@ -47,6 +47,7 @@ struct SceneView: UIViewRepresentable {
         float3 pinkCol;
         float3 cyanCol;
         float3 greenCol;
+        float3 redCol; // Add red color for the new square
         #pragma body
         
         // Fill the texture with a white background
@@ -77,6 +78,12 @@ struct SceneView: UIViewRepresentable {
         if (uv.y < squareSize && uv.x > 0.5 - squareSize / 2.0 && uv.x < 0.5 + squareSize / 2.0) {
             _output.color.rgb = greenCol;  // Green color for the square
         }
+        
+        // Red square at a random location
+        if (uv.x > redCol.x - squareSize / 2.0 && uv.x < redCol.x + squareSize / 2.0 &&
+            uv.y > redCol.y - squareSize / 2.0 && uv.y < redCol.y + squareSize / 2.0) {
+            _output.color.rgb = float3(1.0, 0.0, 0.0);  // Red color for the square (255, 0, 0)
+        }
         """
         material.shaderModifiers = [.fragment: fragShader]
         
@@ -85,6 +92,11 @@ struct SceneView: UIViewRepresentable {
         material.setValue(SCNVector3(1.0, 0.0, 1.0), forKey: "pinkCol")  // Pink color
         material.setValue(SCNVector3(0.0, 1.0, 1.0), forKey: "cyanCol")  // Cyan color
         material.setValue(SCNVector3(0.0, 1.0, 0.0), forKey: "greenCol")  // Green color
+        
+        // Generate random position for the red square (within the plane)
+        let randomX = Float.random(in: 0.1...0.9)
+        let randomY = Float.random(in: 0.1...0.9)
+        material.setValue(SCNVector3(randomX, randomY, 0.0), forKey: "redCol")  // Red color location
         
         return sceneView
     }
