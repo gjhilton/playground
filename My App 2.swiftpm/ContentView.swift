@@ -3,12 +3,13 @@ import RealityKit
 
 struct ContentView: View {
     @State private var cameraAngle: Float = 0
+    
     let dist: Float = 2.0
     let centerOfInterest: SIMD3<Float> = [0, 0, 0]
+    let dragSensitivity: Float = 0.000125 // extremely slow rotation
     
     var body: some View {
         RealityView { content in
-            // Load texture
             guard let uiImage = UIImage(named: "map"),
                   let cgImage = uiImage.cgImage,
                   let texture = try? TextureResource.generate(from: cgImage, options: .init(semantic: .color))
@@ -28,7 +29,6 @@ struct ContentView: View {
             anchor.name = "mainAnchor"
             anchor.addChild(plane)
             
-            // Add camera and light placeholders (we’ll update their transforms later)
             let camera = PerspectiveCamera()
             camera.name = "orbitCamera"
             anchor.addChild(camera)
@@ -47,7 +47,11 @@ struct ContentView: View {
                 return
             }
             
-            // Compute camera position on the orbit
+            cameraAngle.formTruncatingRemainder(dividingBy: 2 * .pi)
+            if cameraAngle < 0 {
+                cameraAngle += 2 * .pi
+            }
+            
             let x = dist * cos(cameraAngle)
             let z = dist * sin(cameraAngle)
             let y: Float = 1.0
@@ -56,7 +60,6 @@ struct ContentView: View {
             camera.position = cameraPosition
             camera.look(at: centerOfInterest, from: cameraPosition, relativeTo: nil)
             
-            // Position light to match camera, just a bit higher
             let lightPos = SIMD3<Float>(x, y + 1, z)
             light.position = lightPos
             light.look(at: centerOfInterest, from: lightPos, relativeTo: nil)
@@ -65,7 +68,7 @@ struct ContentView: View {
             DragGesture()
                 .onChanged { value in
                     let dragAmount = Float(value.translation.width)
-                    cameraAngle -= dragAmount * 0.005
+                    cameraAngle -= dragAmount * dragSensitivity
                 }
         )
     }
