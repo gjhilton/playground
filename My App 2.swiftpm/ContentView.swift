@@ -1,6 +1,43 @@
 import SwiftUI
 import RealityKit
 
+/*
+ **ContentView.swift** for RealityKit Camera Orbit
+ 
+ **Purpose**:
+ - This SwiftUI view creates a simple RealityKit scene where a plane is placed at the origin and the camera orbits around it based on user interaction (dragging).
+ - The camera orbits around the origin in a **spherical coordinate system**. The horizontal drag rotates the camera around the Y-axis, and the vertical drag moves the camera up and down along a semicircular orbit above the plane.
+ - The camera maintains a fixed distance from the center and only orbits in 3D space. The drag speed for both axes (horizontal and vertical) has been significantly slowed down for smoother, more controlled interaction.
+ 
+ **Important Notes**:
+ - The camera rotates around the origin, staying a fixed distance (`dist`) from the center.
+ - The vertical dragging is constrained so that the camera can never move below a certain height (Y ≥ 0.25), ensuring that the camera stays above the plane.
+ - Sensitivities for both horizontal and vertical dragging have been adjusted to very slow values for a smooth experience.
+ 
+ **Features**:
+ - Horizontal drag (left-right) rotates the camera around the Y-axis (azimuthal rotation).
+ - Vertical drag (up-down) moves the camera along a semicircular arc around the origin, modifying its elevation (altitude).
+ - Camera position is calculated using spherical coordinates to maintain a fixed distance and smooth movement along the orbit.
+ 
+ **Drag Sensitivity**:
+ - Horizontal Drag Sensitivity (`dragSensitivity`) is set to `0.00025` for slower horizontal camera movement.
+ - Vertical Drag Sensitivity (`verticalDragSensitivity`) is set to `0.00025` for slower vertical movement.
+ 
+ **Camera Constraints**:
+ - The camera’s vertical angle is constrained between 0.25 and 1.5 radians to prevent flipping over or going below the plane.
+ 
+ **To Pick Up From Here**:
+ - The drag behavior and camera movement logic are managed via `DragGesture()`, which updates the `cameraAngle` (horizontal rotation) and `verticalAngle` (vertical rotation).
+ - The camera position is updated in the `RealityView`'s `update` closure.
+ - Further improvements might include adding inertia, smoother transitions, or additional features like zooming or camera pitch adjustments.
+ 
+ **Current Known Limitations**:
+ - The camera is always fixed at a distance from the center (`dist`), and no zooming or scaling is implemented yet.
+ - Only horizontal and vertical dragging is implemented as an interaction method.
+ - The code does not handle edge cases like extreme dragging that might push the camera out of bounds.
+ 
+ */
+
 struct ContentView: View {
     @State private var cameraAngle: Float = 0 // Camera rotation angle (around Y axis)
     @State private var verticalAngle: Float = 0.5 // Vertical rotation angle (from horizontal plane)
