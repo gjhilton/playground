@@ -47,7 +47,7 @@ struct SceneView: UIViewRepresentable {
         float3 pinkCol;
         float3 cyanCol;
         float3 greenCol;
-        float3 redCol; // Add red color for the new square
+        float3 redCol; // Add red color for the new ellipse
         #pragma body
         
         // Fill the texture with a white background
@@ -79,10 +79,17 @@ struct SceneView: UIViewRepresentable {
             _output.color.rgb = greenCol;  // Green color for the square
         }
         
-        // Red square at a random location
-        if (uv.x > redCol.x - squareSize / 2.0 && uv.x < redCol.x + squareSize / 2.0 &&
-            uv.y > redCol.y - squareSize / 2.0 && uv.y < redCol.y + squareSize / 2.0) {
-            _output.color.rgb = float3(1.0, 0.0, 0.0);  // Red color for the square (255, 0, 0)
+        // Red ellipse at a random location
+        float ellipseWidth = 0.2;  // Ellipse width
+        float ellipseHeight = 0.1; // Ellipse height
+        
+        // Calculate the distance from the center of the ellipse
+        float distX = (uv.x - redCol.x) / (ellipseWidth / 2.0);
+        float distY = (uv.y - redCol.y) / (ellipseHeight / 2.0);
+        
+        // Check if the point is inside the ellipse
+        if (distX * distX + distY * distY <= 1.0) {
+            _output.color.rgb = float3(1.0, 0.0, 0.0);  // Red color for the ellipse (255, 0, 0)
         }
         """
         material.shaderModifiers = [.fragment: fragShader]
@@ -93,7 +100,7 @@ struct SceneView: UIViewRepresentable {
         material.setValue(SCNVector3(0.0, 1.0, 1.0), forKey: "cyanCol")  // Cyan color
         material.setValue(SCNVector3(0.0, 1.0, 0.0), forKey: "greenCol")  // Green color
         
-        // Generate random position for the red square (within the plane)
+        // Generate random position for the red ellipse (within the plane)
         let randomX = Float.random(in: 0.1...0.9)
         let randomY = Float.random(in: 0.1...0.9)
         material.setValue(SCNVector3(randomX, randomY, 0.0), forKey: "redCol")  // Red color location
