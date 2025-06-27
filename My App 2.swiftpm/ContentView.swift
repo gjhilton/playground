@@ -9,8 +9,8 @@ struct ContentView: View {
     
     let dist: Float = 2.0 // Orbit radius (fixed)
     let centerOfInterest: SIMD3<Float> = [0, 0, 0] // The center of orbit
-    let dragSensitivity: Float = 0.002 // Sensitivity for the horizontal drag
-    let verticalDragSensitivity: Float = 0.002 // Sensitivity for the vertical drag
+    let dragSensitivity: Float = 0.00025 // VERY slow sensitivity for the horizontal drag
+    let verticalDragSensitivity: Float = 0.000025 // MUCH slower sensitivity for vertical drag
     let minY: Float = 0.25 // Minimum allowed y value (camera height)
     
     var body: some View {
