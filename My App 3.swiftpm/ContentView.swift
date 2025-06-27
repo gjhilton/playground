@@ -14,7 +14,7 @@ struct ContentView: View {
 struct SceneView: UIViewRepresentable {
     func makeUIView(context: Context) -> SCNView {
         // Set up the SCNView
-        let frame = CGRect(x: 0, y: 0, width: 400, height: 200)
+        let frame = CGRect(x: 0, y: 0, width: 400, height: 400)
         let sceneView = SCNView(frame: frame)
         sceneView.backgroundColor = .black  // Set the background to black
         sceneView.showsStatistics = false
@@ -33,50 +33,58 @@ struct SceneView: UIViewRepresentable {
         let geo = SCNPlane(width: 4, height: 4)  // Plane geometry instead of box
         let node = SCNNode(geometry: geo)
         
-        // No rotation needed, just position the plane at the origin
+        // Position the plane at the origin and keep it flat facing forward
         node.position = SCNVector3(0, 0, 0)  // Position the plane at the origin
+        node.eulerAngles = SCNVector3(0, 0, 0) // Ensure plane is not rotated at all
         sceneView.scene!.rootNode.addChildNode(node)
-        
-        // Generate a random position in local space (between -1 and 1 for x, z)
-        let randomPosition = SCNVector3(
-            Float.random(in: -1.0...1.0),
-            0,  // Keep Y fixed for a 2D plane
-            Float.random(in: -1.0...1.0)
-        )
         
         // Create material with the fragment shader
         let material = geo.firstMaterial!
         let fragShader = """
         #pragma transparent
         #pragma arguments
-        float3 lazerCol;
-        float3 dotPosition;
+        float3 blueCol;
+        float3 pinkCol;
+        float3 cyanCol;
+        float3 greenCol;
         #pragma body
         
-        // Set a white background
+        // Fill the texture with a white background
         _output.color.rgb = float3(1.0, 1.0, 1.0);  // White background
         
         // Use UV coordinates of the surface
         float2 uv = _surface.diffuseTexcoord;
         
-        // Calculate distance from the random position
-        float xDist = abs(uv.x - 0.5);  // Distance from the center in x
-        float yDist = abs(uv.y - 0.5);  // Distance from the center in y
-        float dist = length(float2(xDist, yDist));
+        // Define the size of the squares (flush to edges)
+        float squareSize = 0.1;  // Square size
         
-        // Define the dot size threshold
-        float dotSize = 0.1;
+        // Blue square flush to the left
+        if (uv.x < squareSize && uv.y > 0.5 - squareSize / 2.0 && uv.y < 0.5 + squareSize / 2.0) {
+            _output.color.rgb = blueCol;  // Blue color for the square
+        }
         
-        // Render the red dot at the random position
-        if (dist < dotSize) {
-            _output.color.rgb = lazerCol;  // Render the dot in red
+        // Pink square flush to the right
+        if (uv.x > 1.0 - squareSize && uv.y > 0.5 - squareSize / 2.0 && uv.y < 0.5 + squareSize / 2.0) {
+            _output.color.rgb = pinkCol;  // Pink color for the square
+        }
+        
+        // Cyan square flush to the top
+        if (uv.y > 1.0 - squareSize && uv.x > 0.5 - squareSize / 2.0 && uv.x < 0.5 + squareSize / 2.0) {
+            _output.color.rgb = cyanCol;  // Cyan color for the square
+        }
+        
+        // Green square flush to the bottom
+        if (uv.y < squareSize && uv.x > 0.5 - squareSize / 2.0 && uv.x < 0.5 + squareSize / 2.0) {
+            _output.color.rgb = greenCol;  // Green color for the square
         }
         """
         material.shaderModifiers = [.fragment: fragShader]
         
-        // Pass the random position and color to the shader
-        material.setValue(SCNVector3(1.0, 0.0, 0.0), forKey: "lazerCol")  // Red color for the dot
-        material.setValue(randomPosition, forKey: "dotPosition")
+        // Pass the colors to the shader
+        material.setValue(SCNVector3(0.0, 0.0, 1.0), forKey: "blueCol")  // Blue color
+        material.setValue(SCNVector3(1.0, 0.0, 1.0), forKey: "pinkCol")  // Pink color
+        material.setValue(SCNVector3(0.0, 1.0, 1.0), forKey: "cyanCol")  // Cyan color
+        material.setValue(SCNVector3(0.0, 1.0, 0.0), forKey: "greenCol")  // Green color
         
         return sceneView
     }
