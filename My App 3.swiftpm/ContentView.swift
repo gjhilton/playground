@@ -43,10 +43,6 @@ struct SceneView: UIViewRepresentable {
         let fragShader = """
         #pragma transparent
         #pragma arguments
-        float3 blueCol;
-        float3 pinkCol;
-        float3 cyanCol;
-        float3 greenCol;
         float3 redCol; // Add red color for the new circle
         #pragma body
         
@@ -55,29 +51,6 @@ struct SceneView: UIViewRepresentable {
         
         // Use UV coordinates of the surface
         float2 uv = _surface.diffuseTexcoord;
-        
-        // Define the size of the squares (flush to edges)
-        float squareSize = 0.1;  // Square size
-        
-        // Blue square flush to the left
-        if (uv.x < squareSize && uv.y > 0.5 - squareSize / 2.0 && uv.y < 0.5 + squareSize / 2.0) {
-            _output.color.rgb = blueCol;  // Blue color for the square
-        }
-        
-        // Pink square flush to the right
-        if (uv.x > 1.0 - squareSize && uv.y > 0.5 - squareSize / 2.0 && uv.y < 0.5 + squareSize / 2.0) {
-            _output.color.rgb = pinkCol;  // Pink color for the square
-        }
-        
-        // Cyan square flush to the top
-        if (uv.y > 1.0 - squareSize && uv.x > 0.5 - squareSize / 2.0 && uv.x < 0.5 + squareSize / 2.0) {
-            _output.color.rgb = cyanCol;  // Cyan color for the square
-        }
-        
-        // Green square flush to the bottom
-        if (uv.y < squareSize && uv.x > 0.5 - squareSize / 2.0 && uv.x < 0.5 + squareSize / 2.0) {
-            _output.color.rgb = greenCol;  // Green color for the square
-        }
         
         // Red circle at a random location
         float circleRadius = 0.05;  // Circle radius reduced to half
@@ -94,11 +67,6 @@ struct SceneView: UIViewRepresentable {
         material.shaderModifiers = [.fragment: fragShader]
         
         // Pass the colors to the shader
-        material.setValue(SCNVector3(0.0, 0.0, 1.0), forKey: "blueCol")  // Blue color
-        material.setValue(SCNVector3(1.0, 0.0, 1.0), forKey: "pinkCol")  // Pink color
-        material.setValue(SCNVector3(0.0, 1.0, 1.0), forKey: "cyanCol")  // Cyan color
-        material.setValue(SCNVector3(0.0, 1.0, 0.0), forKey: "greenCol")  // Green color
-        
         // Generate random position for the red circle (within the plane)
         let randomX = Float.random(in: 0.1...0.9)
         let randomY = Float.random(in: 0.1...0.9)
