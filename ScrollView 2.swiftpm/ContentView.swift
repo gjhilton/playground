@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 // Protocol for TitleScreenView implementations
-protocol TitleScreenViewProtocol {
+protocol TitleScreenViewProtocol: UIView {
     var onReady: (() -> Void)? { get set }
     init(onReady: @escaping (() -> Void))
 }
@@ -15,7 +15,7 @@ struct MenuNode: Codable {
     var progress: Float
 }
 
-// TitleScreenView for the initial page (Updated to "Ready" and improved encapsulation)
+// TitleScreenView for the initial page
 final class TitleScreenView: UIView, TitleScreenViewProtocol {
     private let label = UILabel()
     private let button = UIButton(type: .system)
@@ -152,11 +152,14 @@ final class ScrollingView: UIView {
     private let stackView = UIStackView()
     private var views: [UIView] = []
     private var currentNode: MenuNode?
+    private var initialViewClass: TitleScreenViewProtocol.Type
     
-    override init(frame: CGRect) {
-        super.init(frame: frame)
+    init(initialViewClass: TitleScreenViewProtocol.Type) {
+        self.initialViewClass = initialViewClass
+        super.init(frame: .zero)
         configure()
         layoutUI()
+        addInitialView()
     }
     
     required init?(coder: NSCoder) {
@@ -194,13 +197,14 @@ final class ScrollingView: UIView {
         ])
     }
     
-    private func addInitialViews() {
-        guard let node = currentNode else { return }
-        let titleView = TitleScreenView(onReady: { [weak self] in
+    private func addInitialView() {
+        // Ensure that the initialViewClass conforms to UIView and TitleScreenViewProtocol
+        let titleScreenView = initialViewClass.init(onReady: { [weak self] in
             self?.addFirstMenu()
             self?.scrollToPage(index: 1)
         })
-        addView(titleView)
+        
+        addView(titleScreenView)
     }
     
     private func addFirstMenu() {
@@ -247,7 +251,7 @@ final class ScrollingView: UIView {
         }
         views.removeAll()
         
-        addInitialViews()
+        addInitialView()
     }
     
     func parseMenuData(from jsonString: String) -> MenuNode? {
@@ -264,7 +268,6 @@ final class ScrollingView: UIView {
     }
 }
 
-// JSON data for the menu structure
 let jsonData = """
 {
     "title": "Home",
@@ -295,7 +298,7 @@ let jsonData = """
 
 struct ScrollingViewRepresentable: UIViewRepresentable {
     func makeUIView(context: Context) -> ScrollingView {
-        let scrollView = ScrollingView()
+        let scrollView = ScrollingView(initialViewClass: TitleScreenView.self)
         if let rootNode = scrollView.parseMenuData(from: jsonData) {
             scrollView.loadTree(rootNode)
         }
