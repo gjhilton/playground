@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-// Define the MenuNode structure, representing each menu item
+// MenuNode structure for tree data (same as before)
 struct MenuNode {
     let title: String
     let viewClass: UIView.Type
@@ -9,7 +9,7 @@ struct MenuNode {
     var progress: Float
 }
 
-// Base class for creating a custom view for the title on page 1
+// Title View for the initial page
 final class TitleView: UIView {
     private let label = UILabel()
     
@@ -36,19 +36,17 @@ final class TitleView: UIView {
     }
 }
 
-// A view that renders the top menu (Tour, Browse, Extras) buttons
+// TopMenuView with data-driven buttons (vertical layout)
 final class TopMenuView: UIView {
-    let tourButton = UIButton(type: .system)
-    let browseButton = UIButton(type: .system)
-    let extrasButton = UIButton(type: .system)
     private let stackView = UIStackView()
     var onButtonTap: ((String) -> Void)?
     
-    override init(frame: CGRect) {
-        super.init(frame: frame)
+    // Initializer with child nodes to dynamically create buttons
+    init(children: [MenuNode]) {
+        super.init(frame: .zero)
         backgroundColor = UIColor(red: 0.5, green: 0, blue: 0, alpha: 1)
         configure()
-        layoutUI()
+        layoutUI(children: children)
     }
     
     required init?(coder: NSCoder) {
@@ -56,43 +54,40 @@ final class TopMenuView: UIView {
     }
     
     private func configure() {
-        stackView.axis = .horizontal
-        stackView.distribution = .fillEqually
-        stackView.spacing = 40
+        stackView.axis = .vertical  // Change to vertical layout
+        stackView.distribution = .fill
+        stackView.spacing = 20  // Space between buttons
         stackView.translatesAutoresizingMaskIntoConstraints = false
-        
-        tourButton.setTitle("Tour", for: .normal)
-        browseButton.setTitle("Browse", for: .normal)
-        extrasButton.setTitle("Extras", for: .normal)
-        
-        [tourButton, browseButton, extrasButton].forEach {
-            $0.setTitleColor(.white, for: .normal)
-            $0.titleLabel?.font = .boldSystemFont(ofSize: 28)
-            stackView.addArrangedSubview($0)
-        }
-        
-        tourButton.addTarget(self, action: #selector(tourTapped), for: .touchUpInside)
-        browseButton.addTarget(self, action: #selector(browseTapped), for: .touchUpInside)
-        extrasButton.addTarget(self, action: #selector(extrasTapped), for: .touchUpInside)
     }
     
-    private func layoutUI() {
+    private func layoutUI(children: [MenuNode]) {
         addSubview(stackView)
+        
+        // Dynamically create buttons based on child nodes
+        children.forEach { child in
+            let button = UIButton(type: .system)
+            button.setTitle(child.title, for: .normal)
+            button.setTitleColor(.white, for: .normal)
+            button.titleLabel?.font = .boldSystemFont(ofSize: 28)
+            button.addTarget(self, action: #selector(buttonTapped(_:)), for: .touchUpInside)
+            stackView.addArrangedSubview(button)
+        }
+        
         NSLayoutConstraint.activate([
             stackView.centerXAnchor.constraint(equalTo: centerXAnchor),
             stackView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            stackView.heightAnchor.constraint(equalToConstant: 60),
-            stackView.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 20),
-            stackView.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -20),
+            stackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
+            stackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
         ])
     }
     
-    @objc private func tourTapped() { onButtonTap?("Tour") }
-    @objc private func browseTapped() { onButtonTap?("Browse") }
-    @objc private func extrasTapped() { onButtonTap?("Extras") }
+    @objc private func buttonTapped(_ sender: UIButton) {
+        guard let title = sender.title(for: .normal) else { return }
+        onButtonTap?(title)
+    }
 }
 
-// View for other pages like the "Tour" or "Browse" pages
+// View for other pages like "Tour", "Browse", etc.
 final class PageView: UIView {
     init(title: String) {
         super.init(frame: .zero)
@@ -116,7 +111,7 @@ final class PageView: UIView {
     }
 }
 
-// The scrolling view that holds the dynamically created views based on the data
+// The scrolling view holding the pages (unchanged from previous)
 final class ScrollingView: UIView {
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()
@@ -171,8 +166,8 @@ final class ScrollingView: UIView {
         let titleView = TitleView(title: node.title)
         addView(titleView)
         
-        // Add the top menu view
-        let menuView = TopMenuView()
+        // Add the top menu view based on the children of the current node
+        let menuView = TopMenuView(children: node.children)
         menuView.onButtonTap = { [weak self] label in
             self?.handleMenuTap(label: label)
         }
@@ -224,7 +219,7 @@ final class ScrollingView: UIView {
 
 // Example data for the menu
 let rootNode = MenuNode(
-    title: "Secret project",
+    title: "Home",
     viewClass: TitleView.self,
     children: [
         MenuNode(
