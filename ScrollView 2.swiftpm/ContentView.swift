@@ -9,30 +9,43 @@ struct MenuNode: Codable {
     var progress: Float
 }
 
-// TitleScreen View for the initial page
+// TitleScreenView for the initial page (Updated to "Ready" and improved encapsulation)
 final class TitleScreenView: UIView {
     private let label = UILabel()
     private let button = UIButton(type: .system)
+    private let titleText: String = "Welcome to the App"
+    private var isReady = false
+    var onReady: (() -> Void)?
     
-    var onButtonTap: (() -> Void)?
-    private var isButtonTapped = false // Track button tap state
-    
-    init(title: String) {
+    init(onReady: @escaping (() -> Void)) {
+        self.onReady = onReady
         super.init(frame: .zero)
         backgroundColor = .white
-        
-        label.text = title
+        setupLabel()
+        setupButton()
+        layoutUI()
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    private func setupLabel() {
+        label.text = titleText
         label.font = .boldSystemFont(ofSize: 36)
         label.textAlignment = .center
         label.textColor = UIColor(red: 0.5, green: 0, blue: 0, alpha: 1)
         label.translatesAutoresizingMaskIntoConstraints = false
-        
-        // Configure the button
-        button.setTitle("Start", for: .normal)
+    }
+    
+    private func setupButton() {
+        button.setTitle("Ready", for: .normal)
         button.titleLabel?.font = .boldSystemFont(ofSize: 24)
         button.addTarget(self, action: #selector(buttonTapped), for: .touchUpInside)
         button.translatesAutoresizingMaskIntoConstraints = false
-        
+    }
+    
+    private func layoutUI() {
         addSubview(label)
         addSubview(button)
         
@@ -45,15 +58,11 @@ final class TitleScreenView: UIView {
         ])
     }
     
-    required init?(coder: NSCoder) {
-        fatalError()
-    }
-    
     @objc private func buttonTapped() {
-        if !isButtonTapped {
-            isButtonTapped = true
-            button.removeFromSuperview() // Remove the button permanently
-            onButtonTap?() // Trigger the callback
+        if !isReady {
+            isReady = true
+            button.removeFromSuperview()
+            onReady?()
         }
     }
 }
@@ -63,7 +72,6 @@ final class TopMenuView: UIView {
     private let stackView = UIStackView()
     var onButtonTap: ((String) -> Void)?
     
-    // Initializer with child nodes to dynamically create buttons
     init(children: [MenuNode]) {
         super.init(frame: .zero)
         backgroundColor = UIColor(red: 0.5, green: 0, blue: 0, alpha: 1)
@@ -76,16 +84,15 @@ final class TopMenuView: UIView {
     }
     
     private func configure() {
-        stackView.axis = .vertical  // Change to vertical layout
+        stackView.axis = .vertical
         stackView.distribution = .fill
-        stackView.spacing = 20  // Space between buttons
+        stackView.spacing = 20
         stackView.translatesAutoresizingMaskIntoConstraints = false
     }
     
     private func layoutUI(children: [MenuNode]) {
         addSubview(stackView)
         
-        // Dynamically create buttons based on child nodes
         children.forEach { child in
             let button = UIButton(type: .system)
             button.setTitle(child.title, for: .normal)
@@ -133,7 +140,7 @@ final class PageView: UIView {
     }
 }
 
-// The scrolling view holding the pages (with array of views to maintain state)
+// The scrolling view holding the pages
 final class ScrollingView: UIView {
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()
@@ -182,43 +189,33 @@ final class ScrollingView: UIView {
     }
     
     private func addInitialViews() {
-        // Add the initial title screen view
         guard let node = currentNode else { return }
-        let titleScreenView = TitleScreenView(title: node.title)
-        titleScreenView.onButtonTap = { [weak self] in
-            self?.handleMenuTransition()
-        }
-        addView(titleScreenView)
+        let titleView = TitleScreenView(onReady: { [weak self] in
+            self?.addFirstMenu()
+            self?.scrollToPage(index: 1)
+        })
+        addView(titleView)
     }
     
-    private func handleMenuTransition() {
+    private func addFirstMenu() {
         guard let node = currentNode else { return }
         
-        // Add the top menu view based on the children of the current node
         let menuView = TopMenuView(children: node.children)
         menuView.onButtonTap = { [weak self] label in
             self?.handleMenuTap(label: label)
         }
         addView(menuView)
-        
-        // Scroll to the newly added menu view
-        DispatchQueue.main.async {
-            self.scrollToPage(index: 1)
-        }
     }
     
     private func handleMenuTap(label: String) {
-        // Remove existing page views if present
         while views.count > 2 {
             let view = views.removeLast()
             view.removeFromSuperview()
         }
         
-        // Add a new page view for the tapped label
         let pageView = PageView(title: label)
         addView(pageView)
         
-        // Scroll to the newly added page view
         DispatchQueue.main.async {
             self.scrollToPage(index: 2)
         }
@@ -236,11 +233,9 @@ final class ScrollingView: UIView {
         scrollView.setContentOffset(CGPoint(x: offset, y: 0), animated: true)
     }
     
-    // Load the tree structure from the parsed data
     func loadTree(_ node: MenuNode) {
         currentNode = node
         
-        // Reset views
         for view in views {
             view.removeFromSuperview()
         }
@@ -249,7 +244,6 @@ final class ScrollingView: UIView {
         addInitialViews()
     }
     
-    // Parse the JSON string into MenuNode
     func parseMenuData(from jsonString: String) -> MenuNode? {
         let data = jsonString.data(using: .utf8)!
         let decoder = JSONDecoder()
@@ -264,7 +258,7 @@ final class ScrollingView: UIView {
     }
 }
 
-// JSON data for the menu structure (passed from ContentView)
+// JSON data for the menu structure
 let jsonData = """
 {
     "title": "Home",
