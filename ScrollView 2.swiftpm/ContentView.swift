@@ -12,6 +12,10 @@ struct MenuNode: Codable {
 // TitleScreen View for the initial page
 final class TitleScreenView: UIView {
     private let label = UILabel()
+    private let button = UIButton(type: .system)
+    
+    var onButtonTap: (() -> Void)?
+    private var isButtonTapped = false // Track button tap state
     
     init(title: String) {
         super.init(frame: .zero)
@@ -23,16 +27,34 @@ final class TitleScreenView: UIView {
         label.textColor = UIColor(red: 0.5, green: 0, blue: 0, alpha: 1)
         label.translatesAutoresizingMaskIntoConstraints = false
         
+        // Configure the button
+        button.setTitle("Start", for: .normal)
+        button.titleLabel?.font = .boldSystemFont(ofSize: 24)
+        button.addTarget(self, action: #selector(buttonTapped), for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        
         addSubview(label)
+        addSubview(button)
         
         NSLayoutConstraint.activate([
             label.centerXAnchor.constraint(equalTo: centerXAnchor),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            
+            button.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 40),
+            button.centerXAnchor.constraint(equalTo: centerXAnchor),
         ])
     }
     
     required init?(coder: NSCoder) {
         fatalError()
+    }
+    
+    @objc private func buttonTapped() {
+        if !isButtonTapped {
+            isButtonTapped = true
+            button.removeFromSuperview() // Remove the button permanently
+            onButtonTap?() // Trigger the callback
+        }
     }
 }
 
@@ -160,10 +182,17 @@ final class ScrollingView: UIView {
     }
     
     private func addInitialViews() {
-        // Add the initial title view (this could be dynamically updated later)
+        // Add the initial title screen view
         guard let node = currentNode else { return }
         let titleScreenView = TitleScreenView(title: node.title)
+        titleScreenView.onButtonTap = { [weak self] in
+            self?.handleMenuTransition()
+        }
         addView(titleScreenView)
+    }
+    
+    private func handleMenuTransition() {
+        guard let node = currentNode else { return }
         
         // Add the top menu view based on the children of the current node
         let menuView = TopMenuView(children: node.children)
@@ -171,6 +200,11 @@ final class ScrollingView: UIView {
             self?.handleMenuTap(label: label)
         }
         addView(menuView)
+        
+        // Scroll to the newly added menu view
+        DispatchQueue.main.async {
+            self.scrollToPage(index: 1)
+        }
     }
     
     private func handleMenuTap(label: String) {
