@@ -9,8 +9,8 @@ struct MenuNode: Codable {
     var progress: Float
 }
 
-// TopMenuView with data-driven buttons (vertical layout)
-final class TopMenuView: UIView {
+// MenuModuleView with data-driven buttons (vertical layout)
+final class MenuModuleView: UIView {
     private let stackView = UIStackView()
     var onButtonTap: ((String) -> Void)?
     
@@ -59,7 +59,7 @@ final class TopMenuView: UIView {
 }
 
 // View for other pages like "Tour", "Browse", etc.
-final class PageView: UIView {
+final class PlaceholderModuleView: UIView {
     init(title: String) {
         super.init(frame: .zero)
         backgroundColor = .systemBlue
@@ -146,7 +146,7 @@ final class ScrollingView: UIView {
     private func addFirstMenu() {
         guard let node = currentNode else { return }
         
-        let menuView = TopMenuView(children: node.children)
+        let menuView = MenuModuleView(children: node.children)
         menuView.onButtonTap = { [weak self] label in
             self?.handleMenuTap(label: label)
         }
@@ -159,7 +159,7 @@ final class ScrollingView: UIView {
             view.removeFromSuperview()
         }
         
-        let pageView = PageView(title: label)
+        let pageView = PlaceholderModuleView(title: label)
         addView(pageView)
         
         DispatchQueue.main.async {
@@ -211,19 +211,19 @@ let jsonData = """
     "children": [
         {
             "title": "Tour",
-            "viewClass": "PageView",
+            "viewClass": "PlaceholderModuleView",
             "children": [],
             "progress": 0.5
         },
         {
             "title": "Browse",
-            "viewClass": "PageView",
+            "viewClass": "PlaceholderModuleView",
             "children": [],
             "progress": 0.2
         },
         {
             "title": "Extras",
-            "viewClass": "PageView",
+            "viewClass": "PlaceholderModuleView",
             "children": [],
             "progress": 0.8
         }
