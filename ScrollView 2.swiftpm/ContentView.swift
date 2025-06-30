@@ -1,10 +1,10 @@
 import SwiftUI
 import UIKit
 
-// MenuNode structure for tree data (same as before)
-struct MenuNode {
+// MenuNode structure for tree data (now conforming to Codable)
+struct MenuNode: Codable {
     let title: String
-    let viewClass: UIView.Type
+    let viewClass: String
     let children: [MenuNode]
     var progress: Float
 }
@@ -122,7 +122,6 @@ final class ScrollingView: UIView {
         super.init(frame: frame)
         configure()
         layoutUI()
-        addInitialViews()
     }
     
     required init?(coder: NSCoder) {
@@ -203,7 +202,7 @@ final class ScrollingView: UIView {
         scrollView.setContentOffset(CGPoint(x: offset, y: 0), animated: true)
     }
     
-    // Load the tree structure from the data
+    // Load the tree structure from the parsed data
     func loadTree(_ node: MenuNode) {
         currentNode = node
         
@@ -215,39 +214,57 @@ final class ScrollingView: UIView {
         
         addInitialViews()
     }
+    
+    // Parse the JSON string into MenuNode
+    func parseMenuData(from jsonString: String) -> MenuNode? {
+        let data = jsonString.data(using: .utf8)!
+        let decoder = JSONDecoder()
+        
+        do {
+            let menuData = try decoder.decode(MenuNode.self, from: data)
+            return menuData
+        } catch {
+            print("Error decoding JSON: \(error)")
+            return nil
+        }
+    }
 }
 
-// Example data for the menu
-let rootNode = MenuNode(
-    title: "Home",
-    viewClass: TitleView.self,
-    children: [
-        MenuNode(
-            title: "Tour",
-            viewClass: PageView.self,
-            children: [],
-            progress: 0.5
-        ),
-        MenuNode(
-            title: "Browse",
-            viewClass: PageView.self,
-            children: [],
-            progress: 0.2
-        ),
-        MenuNode(
-            title: "Extras",
-            viewClass: PageView.self,
-            children: [],
-            progress: 0.8
-        )
+// JSON data for the menu structure (passed from ContentView)
+let jsonData = """
+{
+    "title": "Home",
+    "viewClass": "TitleView",
+    "children": [
+        {
+            "title": "Tour",
+            "viewClass": "PageView",
+            "children": [],
+            "progress": 0.5
+        },
+        {
+            "title": "Browse",
+            "viewClass": "PageView",
+            "children": [],
+            "progress": 0.2
+        },
+        {
+            "title": "Extras",
+            "viewClass": "PageView",
+            "children": [],
+            "progress": 0.8
+        }
     ],
-    progress: 0.0
-)
+    "progress": 0.0
+}
+"""
 
 struct ScrollingViewRepresentable: UIViewRepresentable {
     func makeUIView(context: Context) -> ScrollingView {
         let scrollView = ScrollingView()
-        scrollView.loadTree(rootNode)
+        if let rootNode = scrollView.parseMenuData(from: jsonData) {
+            scrollView.loadTree(rootNode)
+        }
         return scrollView
     }
     
