@@ -9,8 +9,8 @@ struct MenuNode: Codable {
     var progress: Float
 }
 
-// Title View for the initial page
-final class TitleView: UIView {
+// TitleScreen View for the initial page
+final class TitleScreenView: UIView {
     private let label = UILabel()
     
     init(title: String) {
@@ -111,7 +111,7 @@ final class PageView: UIView {
     }
 }
 
-// The scrolling view holding the pages (unchanged from previous)
+// The scrolling view holding the pages (with array of views to maintain state)
 final class ScrollingView: UIView {
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()
@@ -162,8 +162,8 @@ final class ScrollingView: UIView {
     private func addInitialViews() {
         // Add the initial title view (this could be dynamically updated later)
         guard let node = currentNode else { return }
-        let titleView = TitleView(title: node.title)
-        addView(titleView)
+        let titleScreenView = TitleScreenView(title: node.title)
+        addView(titleScreenView)
         
         // Add the top menu view based on the children of the current node
         let menuView = TopMenuView(children: node.children)
@@ -234,7 +234,7 @@ final class ScrollingView: UIView {
 let jsonData = """
 {
     "title": "Home",
-    "viewClass": "TitleView",
+    "viewClass": "TitleScreenView",
     "children": [
         {
             "title": "Tour",
