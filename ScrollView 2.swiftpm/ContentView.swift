@@ -1,6 +1,12 @@
 import SwiftUI
 import UIKit
 
+// Protocol for TitleScreenView implementations
+protocol TitleScreenViewProtocol {
+    var onReady: (() -> Void)? { get set }
+    init(onReady: @escaping (() -> Void))
+}
+
 // MenuNode structure for tree data (now conforming to Codable)
 struct MenuNode: Codable {
     let title: String
@@ -10,14 +16,14 @@ struct MenuNode: Codable {
 }
 
 // TitleScreenView for the initial page (Updated to "Ready" and improved encapsulation)
-final class TitleScreenView: UIView {
+final class TitleScreenView: UIView, TitleScreenViewProtocol {
     private let label = UILabel()
     private let button = UIButton(type: .system)
     private let titleText: String = "Welcome to the App"
     private var isReady = false
     var onReady: (() -> Void)?
     
-    init(onReady: @escaping (() -> Void)) {
+    required init(onReady: @escaping (() -> Void)) {
         self.onReady = onReady
         super.init(frame: .zero)
         backgroundColor = .white
