@@ -6,7 +6,6 @@ struct MenuNode: Codable {
     let title: String
     let viewClass: String
     let children: [MenuNode]
-    var progress: Float
 }
 
 // MenuModuleView with data-driven buttons (vertical layout)
@@ -212,23 +211,19 @@ let jsonData = """
         {
             "title": "Tour",
             "viewClass": "PlaceholderModuleView",
-            "children": [],
-            "progress": 0.5
+            "children": []
         },
         {
             "title": "Browse",
             "viewClass": "PlaceholderModuleView",
-            "children": [],
-            "progress": 0.2
+            "children": []
         },
         {
             "title": "Extras",
             "viewClass": "PlaceholderModuleView",
-            "children": [],
-            "progress": 0.8
+            "children": []
         }
-    ],
-    "progress": 0.0
+    ]
 }
 """
 
