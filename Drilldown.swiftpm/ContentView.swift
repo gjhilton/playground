@@ -138,11 +138,11 @@ final class ApplicationViewController {
     init(initialViewClass: TitlePageViewProtocol.Type) {
         self.initialViewClass = initialViewClass
         
-        var parsedPageData: [PageData]? = nil
+        var parsedPageData: PageData? = nil
         if let data = applicationConfigJSON.data(using: .utf8) {
             do {
                 let rootCodablePage = try JSONDecoder().decode(CodablePageData.self, from: data)
-                parsedPageData = rootCodablePage.children?.map { PageData(from: $0) }
+                parsedPageData = PageData(from: rootCodablePage)
             } catch {
                 print("Error decoding JSON: \(error)")
             }
