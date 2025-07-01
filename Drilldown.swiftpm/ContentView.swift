@@ -1,5 +1,7 @@
 import SwiftUI
 
+// MARK: - CodableValue
+
 enum CodableValue: Codable {
     case string(String)
     case int(Int)
@@ -11,50 +13,58 @@ enum CodableValue: Codable {
     
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
+        if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Int.self) {
+            self = .int(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .double(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if container.decodeNil() {
             self = .null
-        } else if let v = try? container.decode(Bool.self) {
-            self = .bool(v)
-        } else if let v = try? container.decode(Int.self) {
-            self = .int(v)
-        } else if let v = try? container.decode(Double.self) {
-            self = .double(v)
-        } else if let v = try? container.decode(String.self) {
-            self = .string(v)
-        } else if let v = try? container.decode([String: CodableValue].self) {
-            self = .object(v)
-        } else if let v = try? container.decode([CodableValue].self) {
-            self = .array(v)
+        } else if let value = try? container.decode([String: CodableValue].self) {
+            self = .object(value)
+        } else if let value = try? container.decode([CodableValue].self) {
+            self = .array(value)
         } else {
-            throw DecodingError.typeMismatch(CodableValue.self, DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Wrong type for CodableValue"))
+            throw DecodingError.typeMismatch(
+                CodableValue.self,
+                DecodingError.Context(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "Wrong type for CodableValue"
+                )
+            )
         }
     }
     
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
-        case .string(let v): try container.encode(v)
-        case .int(let v): try container.encode(v)
-        case .double(let v): try container.encode(v)
-        case .bool(let v): try container.encode(v)
+        case .string(let value): try container.encode(value)
+        case .int(let value): try container.encode(value)
+        case .double(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
         case .null: try container.encodeNil()
-        case .object(let v): try container.encode(v)
-        case .array(let v): try container.encode(v)
+        case .object(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
         }
     }
     
     var anyValue: Any? {
         switch self {
-        case .string(let v): return v
-        case .int(let v): return v
-        case .double(let v): return v
-        case .bool(let v): return v
+        case .string(let value): return value
+        case .int(let value): return value
+        case .double(let value): return value
+        case .bool(let value): return value
         case .null: return nil
-        case .object(let v): return v.mapValues { $0.anyValue }
-        case .array(let v): return v.compactMap { $0.anyValue }
+        case .object(let value): return value.mapValues(\.anyValue)
+        case .array(let value): return value.compactMap(\.anyValue)
         }
     }
 }
+
+// MARK: - CodablePageData
 
 struct CodablePageData: Codable {
     let viewClass: String?
@@ -62,6 +72,8 @@ struct CodablePageData: Codable {
     let data: [String: CodableValue]?
     let children: [CodablePageData]?
 }
+
+// MARK: - PageData
 
 struct PageData {
     let viewClass: String?
@@ -72,22 +84,12 @@ struct PageData {
     init(from codable: CodablePageData) {
         viewClass = codable.viewClass
         label = codable.label
-        if let codableData = codable.data {
-            var tempDict = [String: Any]()
-            for (key, value) in codableData {
-                tempDict[key] = value.anyValue
-            }
-            data = tempDict
-        } else {
-            data = nil
-        }
-        if let codableChildren = codable.children {
-            children = codableChildren.map { PageData(from: $0) }
-        } else {
-            children = nil
-        }
+        data = codable.data?.mapValues(\.anyValue)
+        children = codable.children?.map { PageData(from: $0) }
     }
 }
+
+// MARK: - ApplicationViewController
 
 final class ApplicationViewController {
     let view: ApplicationView
@@ -137,18 +139,15 @@ final class ApplicationViewController {
     
     init(initialViewClass: TitlePageViewProtocol.Type) {
         self.initialViewClass = initialViewClass
-        
-        var parsedPageData: PageData? = nil
-        if let data = applicationConfigJSON.data(using: .utf8) {
-            do {
-                let rootCodablePage = try JSONDecoder().decode(CodablePageData.self, from: data)
-                parsedPageData = PageData(from: rootCodablePage)
-            } catch {
-                print("Error decoding JSON: \(error)")
-            }
+        do {
+            let data = Data(applicationConfigJSON.utf8)
+            let rootCodablePage = try JSONDecoder().decode(CodablePageData.self, from: data)
+            let parsedPageData = PageData(from: rootCodablePage)
+            view = ApplicationView(initialViewClass: initialViewClass, pageData: parsedPageData)
+        } catch {
+            print("Error decoding JSON: \(error)")
+            view = ApplicationView(initialViewClass: initialViewClass, pageData: nil)
         }
-        
-        self.view = ApplicationView(initialViewClass: initialViewClass, pageData: parsedPageData)
         setup()
     }
     
@@ -157,20 +156,22 @@ final class ApplicationViewController {
     }
 }
 
+// MARK: - ApplicationViewRepresentable
+
 struct ApplicationViewRepresentable: UIViewRepresentable {
     let initialViewClass: TitlePageViewProtocol.Type
     
     func makeUIView(context: Context) -> UIView {
-        let controller = ApplicationViewController(initialViewClass: initialViewClass)
-        return controller.view
+        ApplicationViewController(initialViewClass: initialViewClass).view
     }
     
-    func updateUIView(_ uiView: UIView, context: Context) { }
+    func updateUIView(_ uiView: UIView, context: Context) {}
 }
+
+// MARK: - ContentView
 
 struct ContentView: View {
     var body: some View {
         ApplicationViewRepresentable(initialViewClass: TitlePageView.self)
     }
 }
-
