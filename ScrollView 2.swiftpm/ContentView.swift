@@ -140,13 +140,18 @@ final class PlaceholderPageView: UIView, PageView {
     }
 }
 
-// MARK: - MenuPageView
+// MARK: - MenuPageView with callback
 
 final class MenuPageView: UIView, PageView {
     private var buttons: [UIButton] = []
+    private var childrenData: [PageData] = []
+    private var buttonCallback: ((PageData) -> Void)?
     
     required init(data: [String: Any], children: [PageData]?, callback: @escaping () -> Void) {
         super.init(frame: .zero)
+        
+        // Default empty callback; will be set later
+        buttonCallback = nil
         
         backgroundColor = .white
         
@@ -163,12 +168,14 @@ final class MenuPageView: UIView, PageView {
         ])
         
         if let children = children {
-            for child in children {
+            childrenData = children
+            for (index, child) in children.enumerated() {
                 let label = child.label ?? "No Label"
                 let button = UIButton(type: .system)
                 button.setTitle(label, for: .normal)
                 button.titleLabel?.font = .systemFont(ofSize: 24, weight: .medium)
-                button.addTarget(self, action: #selector(buttonPressed), for: .touchUpInside)
+                button.tag = index
+                button.addTarget(self, action: #selector(buttonPressed(_:)), for: .touchUpInside)
                 buttons.append(button)
                 stackView.addArrangedSubview(button)
             }
@@ -179,8 +186,22 @@ final class MenuPageView: UIView, PageView {
         }
     }
     
-    @objc private func buttonPressed() {
-        AudioServicesPlaySystemSound(SystemSoundID(1104)) // Alert sound
+    func setButtonCallback(_ callback: @escaping (PageData) -> Void) {
+        self.buttonCallback = callback
+    }
+    
+    @objc private func buttonPressed(_ sender: UIButton) {
+        let index = sender.tag
+        guard index < childrenData.count else {
+            print("Button index out of range")
+            return
+        }
+        
+        let pageData = childrenData[index]
+        print("Button pressed for pageData: \(pageData)")
+        AudioServicesPlaySystemSound(SystemSoundID(1104))
+        
+        buttonCallback?(pageData)
     }
     
     required init?(coder: NSCoder) {
@@ -347,7 +368,21 @@ final class ApplicationView: UIView {
         let data = pageData.data ?? [:]
         let children = pageData.children
         
-        return viewType.init(data: data, children: children) {}
+        let view = viewType.init(data: data, children: children) {}
+        
+        if let menuView = view as? MenuPageView {
+            menuView.setButtonCallback { [weak self] selectedPageData in
+                guard let self = self else { return }
+                if let newPage = self.createView(from: selectedPageData) {
+                    DispatchQueue.main.async {
+                        self.appendPage(newPage)
+                        self.scrollToPage(index: self.views.count - 1)
+                    }
+                }
+            }
+        }
+        
+        return view
     }
     
     private func appendPage(_ view: UIView) {
