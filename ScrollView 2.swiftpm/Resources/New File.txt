@@ -1,0 +1,141 @@
+Project Notes and Context for Resuming Tomorrow
+
+Overview
+
+We are working on an iOS SwiftUI app that hosts a horizontally paging UIScrollView of UIViews.  
+The views are dynamically generated based on JSON configuration.  
+The core components are:
+
+- TitleScreenView: Initial view on app launch. It’s always the first page and should never be removed or interfered with.
+- ApplicationView: The main container UIView holding all pages in a horizontal UIScrollView with paging enabled.
+- MenuPageView: A UIView subclass representing a menu with buttons generated from JSON children.  
+  Clicking a button triggers loading a corresponding page.
+- PlaceholderPageView: Simple UIView showing a title label and background color from JSON.
+- PageData and CodablePageData: Models representing the JSON configuration and runtime data.
+
+---
+
+What We Have Implemented
+
+1. JSON Driven Views
+
+- JSON defines a hierarchy of pages with:
+  - viewClass (e.g., "MenuPageView" or "PlaceholderPageView")
+  - label for button labels or titles
+  - data dictionary for view-specific data (e.g., titles, colors)
+  - children array for nested pages
+
+- JSON is parsed into CodablePageData, then converted to PageData for runtime use.
+
+2. PageView Protocol
+
+- Protocol implemented by all pages (MenuPageView, PlaceholderPageView) defining a common init:
+  init(data: [String: Any], children: [PageData]?, callback: @escaping () -> Void)
+
+- This allows dynamic creation of views based on JSON.
+
+3. MenuPageView
+
+- Renders buttons for its children.
+- Clicking a button:
+  - Prints the corresponding PageData to console.
+  - Calls a callback closure to notify ApplicationView.
+
+4. ApplicationView
+
+- Holds an array of pages as arranged subviews in a horizontal UIStackView inside a paging UIScrollView.
+- Starts with TitleScreenView page.
+- Loads root MenuPageView from JSON config.
+- Dynamically creates views from JSON data.
+- When a MenuPageView button is clicked, ApplicationView:
+  - Removes all pages to the right of the current menu page (except TitleScreenView).
+  - Appends the new page corresponding to the clicked button.
+  - Scrolls to the newly added page.
+
+5. JSON Configuration Example Used
+
+{
+  "viewClass": "MenuPageView",
+  "children": [
+    {
+      "viewClass": "MenuPageView",
+      "label": "Tour",
+      "children": [
+        {
+          "viewClass": "PlaceholderPageView",
+          "label": "Location A",
+          "data": { "title": "Location A" }
+        },
+        {
+          "viewClass": "PlaceholderPageView",
+          "label": "Location B",
+          "data": { "title": "Location B" }
+        }
+      ]
+    },
+    {
+      "viewClass": "PlaceholderPageView",
+      "label": "Browse",
+      "data": { "title": "Browse placeholder" }
+    },
+    {
+      "viewClass": "PlaceholderPageView",
+      "label": "Extras",
+      "data": { "title": "Extras placeholder" }
+    }
+  ]
+}
+
+This tests nested menus inside the root menu.
+
+---
+
+Key Code Highlights
+
+ApplicationView: Page Management and Removal Logic
+
+- When a menu button is pressed, ApplicationView:
+  - Finds the index of the current menu page in views array.
+  - Removes all pages after that index (the pages to the right).
+  - Adds the new page at the end.
+  - Scrolls to the new page.
+
+This ensures a clean linear navigation without leaving stale pages open.
+
+MenuPageView: Button Callback
+
+- MenuPageView exposes a method to set a button callback closure:
+  func setButtonCallback(_ callback: @escaping (PageData) -> Void)
+- When a button is pressed, calls this closure with the relevant PageData.
+
+---
+
+To Remember For Tomorrow
+
+- The TitleScreenView remains untouched and is always at index 0.
+- The root menu page is appended after the title screen (index 1).
+- When navigating deeper, pages are appended and scrolling is handled smoothly.
+- Removal of pages is crucial to avoid leftover pages cluttering the stack.
+- JSON structure supports nested menus.
+
+---
+
+Potential Next Steps (Suggestions)
+
+- Enhance PlaceholderPageView or add more view types.
+- Load JSON from a file or remote source instead of hardcoded string.
+- Add unit/UI tests for navigation and page lifecycle.
+
+---
+
+File: ContentView.swift (current state)
+
+The entire ContentView, including all classes and structs, was finalized and tested with the nested menu JSON above.
+
+---
+
+If you need me to prepare that file or anything else for tomorrow, just let me know!
+
+---
+
+End of notes.
