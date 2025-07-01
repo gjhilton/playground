@@ -11,7 +11,7 @@ struct CodablePageData: Codable {
     let children: [CodablePageData]?
 }
 
-// Wrapper to decode heterogenous JSON dictionary values
+// Wrapper to decode heterogeneous JSON dictionary values
 enum CodableValue: Codable {
     case string(String)
     case int(Int)
@@ -55,7 +55,6 @@ enum CodableValue: Codable {
         }
     }
     
-    // Convenience: convert to Any for usage
     var anyValue: Any? {
         switch self {
         case .string(let v): return v
@@ -150,7 +149,6 @@ final class MenuPageView: UIView, PageView {
     required init(data: [String: Any], children: [PageData]?, callback: @escaping () -> Void) {
         super.init(frame: .zero)
         
-        // Default empty callback; will be set later
         buttonCallback = nil
         
         backgroundColor = .white
@@ -238,20 +236,32 @@ final class ApplicationView: UIView {
     private var views: [UIView] = []
     private var initialViewClass: TitleScreenViewProtocol.Type
     
-    // This will hold the root PageData loaded from JSON
+    // Root page data loaded from JSON
     private var rootPageData: PageData?
     
-    // Hardcoded JSON config string
     private let applicationConfigJSON = """
     {
         "viewClass": "MenuPageView",
         "children": [
             {
-                "viewClass": "PlaceholderPageView",
+                "viewClass": "MenuPageView",
                 "label": "Tour",
-                "data": {
-                    "title": "Tour placeholder"
-                }
+                "children": [
+                    {
+                        "viewClass": "PlaceholderPageView",
+                        "label": "Location A",
+                        "data": {
+                            "title": "Location A"
+                        }
+                    },
+                    {
+                        "viewClass": "PlaceholderPageView",
+                        "label": "Location B",
+                        "data": {
+                            "title": "Location B"
+                        }
+                    }
+                ]
             },
             {
                 "viewClass": "PlaceholderPageView",
@@ -278,7 +288,6 @@ final class ApplicationView: UIView {
         layoutUI()
         addTitlePage()
         backgroundColor = .white
-        
         loadConfigFromJSON()
     }
     
@@ -371,36 +380,36 @@ final class ApplicationView: UIView {
         let view = viewType.init(data: data, children: children) {}
         
         if let menuView = view as? MenuPageView {
-            menuView.setButtonCallback { [weak self] selectedPageData in
+            menuView.setButtonCallback { [weak self, weak view] selectedPageData in
                 guard let self = self else { return }
+                guard let currentView = view else { return }
+                guard let currentIndex = self.views.firstIndex(of: currentView) else { return }
                 
-                // Find index of the menu page that triggered this callback
-                guard let currentIndex = self.views.firstIndex(of: menuView) else {
-                    print("Current menu view not found in views array")
-                    return
-                }
+                // Remove all pages to the right of current menu page
+                self.removePages(startingAt: currentIndex + 1)
                 
-                // Remove all pages to the right of currentIndex (do NOT remove TitleScreenView at index 0)
-                if currentIndex + 1 < self.views.count {
-                    let rangeToRemove = (currentIndex + 1)..<self.views.count
-                    for index in rangeToRemove.reversed() {
-                        let viewToRemove = self.views[index]
-                        viewToRemove.removeFromSuperview()
-                        self.views.remove(at: index)
-                    }
-                }
-                
-                // Create new page and append
+                // Create and append new page from selectedPageData
                 if let newPage = self.createView(from: selectedPageData) {
-                    DispatchQueue.main.async {
-                        self.appendPage(newPage)
-                        self.scrollToPage(index: self.views.count - 1)
-                    }
+                    self.appendPage(newPage)
+                    self.scrollToPage(index: self.views.count - 1)
                 }
             }
         }
         
         return view
+    }
+    
+    private func removePages(startingAt index: Int) {
+        guard index < views.count else { return }
+        let range = index..<views.count
+        let viewsToRemove = views[range]
+        
+        for view in viewsToRemove {
+            stackView.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        
+        views.removeSubrange(range)
     }
     
     private func appendPage(_ view: UIView) {
