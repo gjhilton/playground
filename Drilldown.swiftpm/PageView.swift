@@ -24,7 +24,7 @@ protocol PageView where Self: UIView {
     init(data: [String: Any], children: [PageData]?, callback: @escaping () -> Void)
 }
 
-final class PlaceholderPageView: UIView, PageView {
+class BasePageView: UIView {
     required init(data: [String: Any], children: [PageData]?, callback: @escaping () -> Void) {
         super.init(frame: .zero)
         
@@ -35,6 +35,24 @@ final class PlaceholderPageView: UIView, PageView {
             backgroundColor = .white
         }
         
+        setupView(data: data, children: children)
+        
+        DispatchQueue.main.async {
+            callback()
+        }
+    }
+    
+    func setupView(data: [String: Any], children: [PageData]?) {
+        // To be overridden by subclasses for custom UI setup
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+final class PlaceholderPageView: BasePageView, PageView {
+    override func setupView(data: [String : Any], children: [PageData]?) {
         let title = data["title"] as? String ?? "No Title"
         
         let label = UILabel()
@@ -48,29 +66,15 @@ final class PlaceholderPageView: UIView, PageView {
             label.centerXAnchor.constraint(equalTo: centerXAnchor),
             label.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
-        
-        DispatchQueue.main.async {
-            callback()
-        }
-    }
-    
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
     }
 }
 
-final class MenuPageView: UIView, PageView {
+final class MenuPageView: BasePageView, PageView {
     private var buttons: [UIButton] = []
     private var childrenData: [PageData] = []
     private var buttonCallback: ((PageData) -> Void)?
     
-    required init(data: [String: Any], children: [PageData]?, callback: @escaping () -> Void) {
-        super.init(frame: .zero)
-        
-        buttonCallback = nil
-        
-        backgroundColor = .white
-        
+    override func setupView(data: [String : Any], children: [PageData]?) {
         let stackView = UIStackView()
         stackView.axis = .vertical
         stackView.spacing = 10
@@ -96,10 +100,6 @@ final class MenuPageView: UIView, PageView {
                 stackView.addArrangedSubview(button)
             }
         }
-        
-        DispatchQueue.main.async {
-            callback()
-        }
     }
     
     func setButtonCallback(_ callback: @escaping (PageData) -> Void) {
@@ -119,9 +119,4 @@ final class MenuPageView: UIView, PageView {
         
         buttonCallback?(pageData)
     }
-    
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
 }
-
