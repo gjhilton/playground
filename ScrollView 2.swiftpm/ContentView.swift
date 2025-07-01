@@ -4,12 +4,12 @@ import AudioToolbox
 
 import UIKit
 
-protocol TitleScreenViewProtocol: UIView {
+protocol TitlePageViewProtocol: UIView {
     var onReady: (() -> Void)? { get set }
     init(onReady: @escaping (() -> Void))
 }
 
-final class TitleScreenView: UIView, TitleScreenViewProtocol {
+final class TitlePageView: UIView, TitlePageViewProtocol {
     private let label = UILabel()
     private let button = UIButton(type: .system)
     private let titleText: String = "Welcome to the App"
@@ -283,7 +283,7 @@ final class ApplicationView: UIView {
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()
     private var views: [UIView] = []
-    private var initialViewClass: TitleScreenViewProtocol.Type
+    private var initialViewClass: TitlePageViewProtocol.Type
     
     private var rootPageData: PageData?
     
@@ -329,7 +329,7 @@ final class ApplicationView: UIView {
     }
     """
     
-    init(initialViewClass: TitleScreenViewProtocol.Type) {
+    init(initialViewClass: TitlePageViewProtocol.Type) {
         self.initialViewClass = initialViewClass
         super.init(frame: .zero)
         configure()
@@ -375,10 +375,10 @@ final class ApplicationView: UIView {
     }
     
     private func addTitlePage() {
-        let titleScreenView = initialViewClass.init(onReady: { [weak self] in
+        let titlePageView = initialViewClass.init(onReady: { [weak self] in
             self?.addRootPage()
         })
-        appendPage(titleScreenView)
+        appendPage(titlePageView)
     }
     
     private func addRootPage() {
@@ -483,7 +483,7 @@ final class ApplicationView: UIView {
 ///
 struct ApplicationViewRepresentable: UIViewRepresentable {
     // Do not modify the initialViewClass here.
-    let initialViewClass: TitleScreenViewProtocol.Type
+    let initialViewClass: TitlePageViewProtocol.Type
     
     func makeUIView(context: Context) -> ApplicationView {
         return ApplicationView(initialViewClass: initialViewClass)
@@ -501,6 +501,6 @@ struct ApplicationViewRepresentable: UIViewRepresentable {
 ///
 struct ContentView: View {
     var body: some View {
-        ApplicationViewRepresentable(initialViewClass: TitleScreenView.self)
+        ApplicationViewRepresentable(initialViewClass: TitlePageView.self)
     }
 }
