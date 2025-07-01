@@ -2,7 +2,69 @@ import SwiftUI
 import UIKit
 import AudioToolbox
 
-// MARK: - Codable Data Model for JSON
+import UIKit
+
+protocol TitleScreenViewProtocol: UIView {
+    var onReady: (() -> Void)? { get set }
+    init(onReady: @escaping (() -> Void))
+}
+
+final class TitleScreenView: UIView, TitleScreenViewProtocol {
+    private let label = UILabel()
+    private let button = UIButton(type: .system)
+    private let titleText: String = "Welcome to the App"
+    private var isReady = false
+    var onReady: (() -> Void)?
+    
+    required init(onReady: @escaping (() -> Void)) {
+        self.onReady = onReady
+        super.init(frame: .zero)
+        backgroundColor = .white
+        setupLabel()
+        setupButton()
+        layoutUI()
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    private func setupLabel() {
+        label.text = titleText
+        label.font = .boldSystemFont(ofSize: 36)
+        label.textAlignment = .center
+        label.textColor = UIColor(red: 0.5, green: 0, blue: 0, alpha: 1)
+        label.translatesAutoresizingMaskIntoConstraints = false
+    }
+    
+    private func setupButton() {
+        button.setTitle("Ready", for: .normal)
+        button.titleLabel?.font = .boldSystemFont(ofSize: 24)
+        button.addTarget(self, action: #selector(buttonTapped), for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
+    }
+    
+    private func layoutUI() {
+        addSubview(label)
+        addSubview(button)
+        
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            
+            button.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 40),
+            button.centerXAnchor.constraint(equalTo: centerXAnchor),
+        ])
+    }
+    
+    @objc private func buttonTapped() {
+        if !isReady {
+            isReady = true
+            button.removeFromSuperview()
+            onReady?()
+        }
+    }
+}
 
 struct CodablePageData: Codable {
     let viewClass: String?
@@ -11,7 +73,6 @@ struct CodablePageData: Codable {
     let children: [CodablePageData]?
 }
 
-// Wrapper to decode heterogeneous JSON dictionary values
 enum CodableValue: Codable {
     case string(String)
     case int(Int)
@@ -68,8 +129,6 @@ enum CodableValue: Codable {
     }
 }
 
-// MARK: - PageData for runtime usage
-
 struct PageData {
     let viewClass: String?
     let data: [String: Any]?
@@ -96,13 +155,9 @@ struct PageData {
     }
 }
 
-// MARK: - PageView Protocol
-
 protocol PageView where Self: UIView {
     init(data: [String: Any], children: [PageData]?, callback: @escaping () -> Void)
 }
-
-// MARK: - PlaceholderPageView
 
 final class PlaceholderPageView: UIView, PageView {
     required init(data: [String: Any], children: [PageData]?, callback: @escaping () -> Void) {
@@ -138,8 +193,6 @@ final class PlaceholderPageView: UIView, PageView {
         fatalError("init(coder:) has not been implemented")
     }
 }
-
-// MARK: - MenuPageView with callback
 
 final class MenuPageView: UIView, PageView {
     private var buttons: [UIButton] = []
@@ -207,13 +260,11 @@ final class MenuPageView: UIView, PageView {
     }
 }
 
-// MARK: - UIColor Extension
-
 extension UIColor {
     convenience init?(hexString: String) {
         var hex = hexString.trimmingCharacters(in: .alphanumerics.inverted)
         if hex.count == 6 {
-            hex = "FF" + hex  // Assume alpha if missing
+            hex = "FF" + hex
         }
         guard hex.count == 8, let intVal = UInt64(hex, radix: 16) else {
             return nil
@@ -228,15 +279,12 @@ extension UIColor {
     }
 }
 
-// MARK: - ApplicationView
-
 final class ApplicationView: UIView {
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()
     private var views: [UIView] = []
     private var initialViewClass: TitleScreenViewProtocol.Type
     
-    // Root page data loaded from JSON
     private var rootPageData: PageData?
     
     private let applicationConfigJSON = """
@@ -385,10 +433,8 @@ final class ApplicationView: UIView {
                 guard let currentView = view else { return }
                 guard let currentIndex = self.views.firstIndex(of: currentView) else { return }
                 
-                // Remove all pages to the right of current menu page
                 self.removePages(startingAt: currentIndex + 1)
                 
-                // Create and append new page from selectedPageData
                 if let newPage = self.createView(from: selectedPageData) {
                     self.appendPage(newPage)
                     self.scrollToPage(index: self.views.count - 1)
@@ -413,31 +459,48 @@ final class ApplicationView: UIView {
     }
     
     private func appendPage(_ view: UIView) {
-        stackView.addArrangedSubview(view)
         views.append(view)
+        stackView.addArrangedSubview(view)
         view.translatesAutoresizingMaskIntoConstraints = false
-        view.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor).isActive = true
+        NSLayoutConstraint.activate([
+            view.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
+            view.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor)
+        ])
     }
     
     private func scrollToPage(index: Int) {
-        let offset = CGFloat(index) * scrollView.frame.width
-        scrollView.setContentOffset(CGPoint(x: offset, y: 0), animated: true)
+        guard index < views.count else { return }
+        let width = scrollView.frame.size.width
+        let offsetX = CGFloat(index) * width
+        scrollView.setContentOffset(CGPoint(x: offsetX, y: 0), animated: true)
     }
 }
 
-// MARK: - SwiftUI Integration
-
+///
+/// IMPORTANT: Do NOT change this struct! Always include it exactly as is.
+/// This struct wraps the UIKit ApplicationView for use in SwiftUI.
+/// Any modification to this may break functionality.
+///
 struct ApplicationViewRepresentable: UIViewRepresentable {
+    // Do not modify the initialViewClass here.
+    let initialViewClass: TitleScreenViewProtocol.Type
+    
     func makeUIView(context: Context) -> ApplicationView {
-        ApplicationView(initialViewClass: TitleScreenView.self)
+        return ApplicationView(initialViewClass: initialViewClass)
     }
     
-    func updateUIView(_ uiView: ApplicationView, context: Context) {}
+    func updateUIView(_ uiView: ApplicationView, context: Context) {
+        // No update logic needed.
+    }
 }
 
+///
+/// IMPORTANT: Do NOT change this struct! Always include it exactly as is.
+/// This is the SwiftUI ContentView wrapping ApplicationViewRepresentable.
+/// Any modification to this may break functionality.
+///
 struct ContentView: View {
     var body: some View {
-        ApplicationViewRepresentable()
-            .edgesIgnoringSafeArea(.all)
+        ApplicationViewRepresentable(initialViewClass: TitleScreenView.self)
     }
 }
