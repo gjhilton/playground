@@ -1,28 +1,41 @@
 import SwiftUI
 import UIKit
 
-// ApplicationView manages a sequence of pages
+struct PageData {
+    let viewClass: String?
+    let data: [String: Any]?
+    let childPages: [PageData]?
+    let label: String?
+}
+
 final class ApplicationView: UIView {
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()
     private var views: [UIView] = []
     private var initialViewClass: TitleScreenViewProtocol.Type
     
-    // Initializer for ApplicationView, accepts the initialViewClass (which is like TitleScreenView)
+    let pageLookup: [String: PageData] = [
+        "0000001": PageData(
+            viewClass: "PlaceholderPageView",
+            data: ["title": "Placeholder page"],
+            childPages: nil,
+            label: nil
+        )
+    ]
+    
     init(initialViewClass: TitleScreenViewProtocol.Type) {
         self.initialViewClass = initialViewClass
         super.init(frame: .zero)
         configure()
         layoutUI()
-        addTitlePage()  // Renamed this method to addTitlePage
-        self.backgroundColor = .white  // Set overall background to white
+        addTitlePage()
+        self.backgroundColor = .white
     }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
     
-    // Configuring the scrollView and stackView
     private func configure() {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.showsHorizontalScrollIndicator = true
@@ -35,7 +48,6 @@ final class ApplicationView: UIView {
         stackView.spacing = 0
     }
     
-    // Layout constraints for the scrollView and stackView
     private func layoutUI() {
         addSubview(scrollView)
         scrollView.addSubview(stackView)
@@ -55,31 +67,58 @@ final class ApplicationView: UIView {
         ])
     }
     
-    // Adds the first page (Title page)
     private func addTitlePage() {
         let titleScreenView = initialViewClass.init(onReady: { [weak self] in
-            self?.addPage(pageGuid: "secondPage")  // Pass pageGuid for the second page (green rectangle)
-            self?.scrollToPage(index: 1)
+            guard let self = self else { return }
+            if let secondPageView = self.createPage(pageGuid: "0000001") {
+                self.appendPage(secondPageView)
+                self.scrollToPage(index: 1)
+            }
         })
-        
-        addPage(view: titleScreenView, pageGuid: "firstPage")  // Add first page with its unique GUID
+        appendPage(titleScreenView)
     }
     
-    // Adds a new page dynamically and accepts a pageGuid argument
-    private func addPage(view: UIView? = nil, color: UIColor? = nil, pageGuid: String) {
-        let pageView = view ?? UIView()
-        pageView.backgroundColor = color ?? .white  // Set the default page background to white
+    // Create a UIView page for a given pageGuid
+    func createPage(pageGuid: String) -> UIView? {
+        guard let pageData = pageLookup[pageGuid] else {
+            print("No page found for GUID: \(pageGuid)")
+            return nil
+        }
         
-        // Optionally use the pageGuid for tracking purposes (you can store it in an array, dictionary, etc.)
-        print("Adding page with GUID: \(pageGuid)") // For now, we're just printing the page GUID
+        // For now, only support "PlaceholderPageView" as a simple UIView with green background and a label
+        if pageData.viewClass == "PlaceholderPageView" {
+            let view = UIView()
+            view.backgroundColor = .green
+            
+            if let title = pageData.data?["title"] as? String {
+                let label = UILabel()
+                label.text = title
+                label.textColor = .white
+                label.font = .boldSystemFont(ofSize: 32)
+                label.translatesAutoresizingMaskIntoConstraints = false
+                view.addSubview(label)
+                
+                NSLayoutConstraint.activate([
+                    label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+                    label.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+                ])
+            }
+            
+            return view
+        }
         
-        stackView.addArrangedSubview(pageView)
-        views.append(pageView)
-        pageView.translatesAutoresizingMaskIntoConstraints = false
-        pageView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor).isActive = true
+        // If viewClass is unknown, return a plain white UIView
+        return UIView()
     }
     
-    // Scroll to the desired page index
+    // Append a UIView page to the scrollView
+    func appendPage(_ view: UIView) {
+        stackView.addArrangedSubview(view)
+        views.append(view)
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor).isActive = true
+    }
+    
     private func scrollToPage(index: Int) {
         let offset = CGFloat(index) * scrollView.frame.width
         scrollView.setContentOffset(CGPoint(x: offset, y: 0), animated: true)
@@ -89,8 +128,7 @@ final class ApplicationView: UIView {
 // SwiftUI wrapper for ApplicationView
 struct ApplicationViewRepresentable: UIViewRepresentable {
     func makeUIView(context: Context) -> ApplicationView {
-        let appView = ApplicationView(initialViewClass: TitleScreenView.self)
-        return appView
+        ApplicationView(initialViewClass: TitleScreenView.self)
     }
     
     func updateUIView(_ uiView: ApplicationView, context: Context) {}
