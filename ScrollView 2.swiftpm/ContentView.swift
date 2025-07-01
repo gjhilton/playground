@@ -2,7 +2,74 @@ import SwiftUI
 import UIKit
 import AudioToolbox
 
-// MARK: - Data Model
+// MARK: - Codable Data Model for JSON
+
+struct CodablePageData: Codable {
+    let viewClass: String?
+    let label: String?
+    let data: [String: CodableValue]?
+    let children: [CodablePageData]?
+}
+
+// Wrapper to decode heterogenous JSON dictionary values
+enum CodableValue: Codable {
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case bool(Bool)
+    case null
+    case object([String: CodableValue])
+    case array([CodableValue])
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let v = try? container.decode(Bool.self) {
+            self = .bool(v)
+        } else if let v = try? container.decode(Int.self) {
+            self = .int(v)
+        } else if let v = try? container.decode(Double.self) {
+            self = .double(v)
+        } else if let v = try? container.decode(String.self) {
+            self = .string(v)
+        } else if let v = try? container.decode([String: CodableValue].self) {
+            self = .object(v)
+        } else if let v = try? container.decode([CodableValue].self) {
+            self = .array(v)
+        } else {
+            throw DecodingError.typeMismatch(CodableValue.self, DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Wrong type for CodableValue"))
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let v): try container.encode(v)
+        case .int(let v): try container.encode(v)
+        case .double(let v): try container.encode(v)
+        case .bool(let v): try container.encode(v)
+        case .null: try container.encodeNil()
+        case .object(let v): try container.encode(v)
+        case .array(let v): try container.encode(v)
+        }
+    }
+    
+    // Convenience: convert to Any for usage
+    var anyValue: Any? {
+        switch self {
+        case .string(let v): return v
+        case .int(let v): return v
+        case .double(let v): return v
+        case .bool(let v): return v
+        case .null: return nil
+        case .object(let v): return v.mapValues { $0.anyValue }
+        case .array(let v): return v.compactMap { $0.anyValue }
+        }
+    }
+}
+
+// MARK: - PageData for runtime usage
 
 struct PageData {
     let viewClass: String?
@@ -10,13 +77,22 @@ struct PageData {
     let children: [PageData]?
     let label: String?
     
-    // Helper to map string class names to PageView types
-    func viewType() -> PageView.Type? {
-        guard let viewClass = viewClass else { return nil }
-        switch viewClass {
-        case "PlaceholderPageView": return PlaceholderPageView.self
-        case "MenuPageView": return MenuPageView.self
-        default: return nil
+    init(from codable: CodablePageData) {
+        viewClass = codable.viewClass
+        label = codable.label
+        if let codableData = codable.data {
+            var tempDict = [String: Any]()
+            for (key, value) in codableData {
+                tempDict[key] = value.anyValue
+            }
+            data = tempDict
+        } else {
+            data = nil
+        }
+        if let codableChildren = codable.children {
+            children = codableChildren.map { PageData(from: $0) }
+        } else {
+            children = nil
         }
     }
 }
@@ -33,7 +109,6 @@ final class PlaceholderPageView: UIView, PageView {
     required init(data: [String: Any], children: [PageData]?, callback: @escaping () -> Void) {
         super.init(frame: .zero)
         
-        // Set background color from data or default white
         if let hex = data["backgroundColour"] as? String,
            let color = UIColor(hexString: hex) {
             backgroundColor = color
@@ -142,19 +217,38 @@ final class ApplicationView: UIView {
     private var views: [UIView] = []
     private var initialViewClass: TitleScreenViewProtocol.Type
     
-    // Hardcoded pageLookup for demo; normally loaded from JSON config
-    let pageLookup: [String: PageData] = [
-        "root": PageData(
-            viewClass: "MenuPageView",
-            data: nil,
-            children: [
-                PageData(viewClass: "PlaceholderPageView", data: ["title": "Tour placeholder"], children: nil, label: "Tour"),
-                PageData(viewClass: "PlaceholderPageView", data: ["title": "Browse placeholder"], children: nil, label: "Browse"),
-                PageData(viewClass: "PlaceholderPageView", data: ["title": "Extras placeholder"], children: nil, label: "Extras")
-            ],
-            label: nil
-        )
-    ]
+    // This will hold the root PageData loaded from JSON
+    private var rootPageData: PageData?
+    
+    // Hardcoded JSON config string
+    private let applicationConfigJSON = """
+    {
+        "viewClass": "MenuPageView",
+        "children": [
+            {
+                "viewClass": "PlaceholderPageView",
+                "label": "Tour",
+                "data": {
+                    "title": "Tour placeholder"
+                }
+            },
+            {
+                "viewClass": "PlaceholderPageView",
+                "label": "Browse",
+                "data": {
+                    "title": "Browse placeholder"
+                }
+            },
+            {
+                "viewClass": "PlaceholderPageView",
+                "label": "Extras",
+                "data": {
+                    "title": "Extras placeholder"
+                }
+            }
+        ]
+    }
+    """
     
     init(initialViewClass: TitleScreenViewProtocol.Type) {
         self.initialViewClass = initialViewClass
@@ -163,6 +257,8 @@ final class ApplicationView: UIView {
         layoutUI()
         addTitlePage()
         backgroundColor = .white
+        
+        loadConfigFromJSON()
     }
     
     required init?(coder: NSCoder) {
@@ -208,29 +304,53 @@ final class ApplicationView: UIView {
     }
     
     private func addRootPage() {
-        createAndAppendPage(pageID: "root")
-        scrollToPage(index: 1)
+        guard let root = rootPageData else {
+            print("Root page data not loaded yet")
+            return
+        }
+        if let page = createView(from: root) {
+            appendPage(page)
+            scrollToPage(index: 1)
+        }
     }
     
-    func createAndAppendPage(pageID: String) {
-        if let pageData = pageLookup[pageID], let page = createView(from: pageData) {
-            appendPage(page)
+    private func loadConfigFromJSON() {
+        guard let jsonData = applicationConfigJSON.data(using: .utf8) else {
+            print("Failed to convert JSON string to data")
+            return
+        }
+        
+        do {
+            let codablePageData = try JSONDecoder().decode(CodablePageData.self, from: jsonData)
+            rootPageData = PageData(from: codablePageData)
+        } catch {
+            print("Failed to decode JSON: \(error)")
         }
     }
     
     private func createView(from pageData: PageData) -> UIView? {
-        guard let viewType = pageData.viewType() else {
-            print("Unknown viewClass: \(pageData.viewClass ?? "nil")")
+        guard let viewClass = pageData.viewClass else {
+            print("No viewClass in pageData")
             return nil
         }
         
-        let dataDict = pageData.data ?? [:]
+        let pageViewType: PageView.Type?
+        switch viewClass {
+        case "PlaceholderPageView": pageViewType = PlaceholderPageView.self
+        case "MenuPageView": pageViewType = MenuPageView.self
+        default:
+            print("Unknown viewClass: \(viewClass)")
+            pageViewType = nil
+        }
+        
+        guard let viewType = pageViewType else { return nil }
+        let data = pageData.data ?? [:]
         let children = pageData.children
         
-        return viewType.init(data: dataDict, children: children, callback: {})
+        return viewType.init(data: data, children: children) {}
     }
     
-    func appendPage(_ view: UIView) {
+    private func appendPage(_ view: UIView) {
         stackView.addArrangedSubview(view)
         views.append(view)
         view.translatesAutoresizingMaskIntoConstraints = false
