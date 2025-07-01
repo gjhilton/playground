@@ -4,7 +4,7 @@ import UIKit
 // MARK: - Data Model
 
 struct PageData {
-    let viewClass: PageView.Type?   // Direct reference to class conforming to PageView
+    let viewClass: PageView.Type?   // Reference to the UIView class implementing PageView
     let data: [String: Any]?
     let childPages: [PageData]?
     let label: String?
@@ -54,14 +54,10 @@ final class PlaceholderPageView: UIView, PageView {
     }
 }
 
-// MARK: - MenuPageView (same as PlaceholderPageView for now)
+// MARK: - MenuPageView (identical to PlaceholderPageView for now)
 
 final class MenuPageView: UIView, PageView {
     required init(data: [String: Any], callback: @escaping () -> Void) {
-        // Reuse PlaceholderPageView init for identical behavior
-        PlaceholderPageView(data: data, callback: callback)
-            .translatesAutoresizingMaskIntoConstraints = false
-        // Since we can't directly call super.init from another class, replicate the code here:
         super.init(frame: .zero)
         
         if let hex = data["backgroundColour"] as? String,
@@ -71,7 +67,7 @@ final class MenuPageView: UIView, PageView {
             self.backgroundColor = .white
         }
         
-        let title = data["title"] as? String ?? "No Title"
+        let title = data["title"] as? String ?? "Menu"
         
         let label = UILabel()
         label.text = title
@@ -131,9 +127,9 @@ final class ApplicationView: UIView {
             childPages: nil,
             label: nil
         ),
-        "0000002": PageData(
+        "root": PageData(
             viewClass: MenuPageView.self,
-            data: ["title": "Menu page", "backgroundColour": "#FFD700"], // Example color gold
+            data: ["title": "Menu page", "backgroundColour": "#FFD700"],
             childPages: nil,
             label: nil
         )
@@ -191,7 +187,7 @@ final class ApplicationView: UIView {
     }
     
     private func addRootPage() {
-        createAndAppendPage(pageID: "0000001")
+        createAndAppendPage(pageID: "root")
         scrollToPage(index: 1)
     }
     
