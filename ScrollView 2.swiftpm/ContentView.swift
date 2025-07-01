@@ -4,7 +4,7 @@ import UIKit
 // MARK: - Data Model
 
 struct PageData {
-    let viewClass: String?
+    let viewClass: PageView.Type?   // Changed from String? to PageView.Type?
     let data: [String: Any]?
     let childPages: [PageData]?
     let label: String?
@@ -85,7 +85,7 @@ final class ApplicationView: UIView {
     
     let pageLookup: [String: PageData] = [
         "0000001": PageData(
-            viewClass: "PlaceholderPageView",
+            viewClass: PlaceholderPageView.self,  // <- Now direct reference
             data: ["title": "Placeholder page"],
             childPages: nil,
             label: nil
@@ -155,16 +155,11 @@ final class ApplicationView: UIView {
     }
     
     func createPage(pageID: String) -> UIView? {
-        guard let pageData = pageLookup[pageID] else {
+        guard let pageData = pageLookup[pageID], let pageClass = pageData.viewClass else {
             print("No page found for ID: \(pageID)")
             return nil
         }
-        
-        if pageData.viewClass == "PlaceholderPageView" {
-            return PlaceholderPageView(data: pageData.data ?? [:]) { }
-        }
-        
-        return UIView()
+        return pageClass.init(data: pageData.data ?? [:]) { }
     }
     
     func appendPage(_ view: UIView) {
