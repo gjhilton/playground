@@ -1,94 +1,14 @@
 import SwiftUI
 import UIKit
 
-// MenuNode structure for tree data (now conforming to Codable)
-struct MenuNode: Codable {
-    let title: String
-    let viewClass: String
-    let children: [MenuNode]
-}
-
-// MenuModuleView with data-driven buttons (vertical layout)
-final class MenuModuleView: UIView {
-    private let stackView = UIStackView()
-    var onButtonTap: ((String) -> Void)?
-    
-    init(children: [MenuNode]) {
-        super.init(frame: .zero)
-        backgroundColor = UIColor(red: 0.5, green: 0, blue: 0, alpha: 1)
-        configure()
-        layoutUI(children: children)
-    }
-    
-    required init?(coder: NSCoder) {
-        fatalError()
-    }
-    
-    private func configure() {
-        stackView.axis = .vertical
-        stackView.distribution = .fill
-        stackView.spacing = 20
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-    }
-    
-    private func layoutUI(children: [MenuNode]) {
-        addSubview(stackView)
-        
-        children.forEach { child in
-            let button = UIButton(type: .system)
-            button.setTitle(child.title, for: .normal)
-            button.setTitleColor(.white, for: .normal)
-            button.titleLabel?.font = .boldSystemFont(ofSize: 28)
-            button.addTarget(self, action: #selector(buttonTapped(_:)), for: .touchUpInside)
-            stackView.addArrangedSubview(button)
-        }
-        
-        NSLayoutConstraint.activate([
-            stackView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            stackView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            stackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
-            stackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
-        ])
-    }
-    
-    @objc private func buttonTapped(_ sender: UIButton) {
-        guard let title = sender.title(for: .normal) else { return }
-        onButtonTap?(title)
-    }
-}
-
-// View for other pages like "Tour", "Browse", etc.
-final class PlaceholderModuleView: UIView {
-    init(title: String) {
-        super.init(frame: .zero)
-        backgroundColor = .systemBlue
-        
-        let label = UILabel()
-        label.text = "\(title) Menu"
-        label.textColor = .white
-        label.font = .boldSystemFont(ofSize: 32)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        
-        addSubview(label)
-        NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-    }
-    
-    required init?(coder: NSCoder) {
-        fatalError()
-    }
-}
-
-// The scrolling view holding the pages
-final class ScrollingView: UIView {
+// ApplicationView manages a sequence of pages
+final class ApplicationView: UIView {
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()
     private var views: [UIView] = []
-    private var currentNode: MenuNode?
     private var initialViewClass: TitleScreenViewProtocol.Type
     
+    // Initializer for ApplicationView, accepts the initialViewClass (which is like TitleScreenView)
     init(initialViewClass: TitleScreenViewProtocol.Type) {
         self.initialViewClass = initialViewClass
         super.init(frame: .zero)
@@ -98,9 +18,10 @@ final class ScrollingView: UIView {
     }
     
     required init?(coder: NSCoder) {
-        fatalError()
+        fatalError("init(coder:) has not been implemented")
     }
     
+    // Configuring the scrollView and stackView
     private func configure() {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.showsHorizontalScrollIndicator = true
@@ -113,6 +34,7 @@ final class ScrollingView: UIView {
         stackView.spacing = 0
     }
     
+    // Layout constraints for the scrollView and stackView
     private func layoutUI() {
         addSubview(scrollView)
         scrollView.addSubview(stackView)
@@ -132,40 +54,24 @@ final class ScrollingView: UIView {
         ])
     }
     
+    // Adds the first view (initial page)
     private func addInitialView() {
-        // Ensure that the initialViewClass conforms to UIView and TitleScreenViewProtocol
         let titleScreenView = initialViewClass.init(onReady: { [weak self] in
-            self?.addFirstMenu()
+            self?.addSecondPage()
             self?.scrollToPage(index: 1)
         })
         
         addView(titleScreenView)
     }
     
-    private func addFirstMenu() {
-        guard let node = currentNode else { return }
-        
-        let menuView = MenuModuleView(children: node.children)
-        menuView.onButtonTap = { [weak self] label in
-            self?.handleMenuTap(label: label)
-        }
-        addView(menuView)
+    // Adds a second page, which will simply be a green rectangle for now
+    private func addSecondPage() {
+        let secondPageView = UIView()
+        secondPageView.backgroundColor = .green
+        addView(secondPageView)
     }
     
-    private func handleMenuTap(label: String) {
-        while views.count > 2 {
-            let view = views.removeLast()
-            view.removeFromSuperview()
-        }
-        
-        let pageView = PlaceholderModuleView(title: label)
-        addView(pageView)
-        
-        DispatchQueue.main.async {
-            self.scrollToPage(index: 2)
-        }
-    }
-    
+    // Adds a view to the stack
     private func addView(_ view: UIView) {
         stackView.addArrangedSubview(view)
         views.append(view)
@@ -173,75 +79,26 @@ final class ScrollingView: UIView {
         view.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor).isActive = true
     }
     
+    // Scroll to the desired page index
     private func scrollToPage(index: Int) {
         let offset = CGFloat(index) * scrollView.frame.width
         scrollView.setContentOffset(CGPoint(x: offset, y: 0), animated: true)
     }
-    
-    func loadTree(_ node: MenuNode) {
-        currentNode = node
-        
-        for view in views {
-            view.removeFromSuperview()
-        }
-        views.removeAll()
-        
-        addInitialView()
-    }
-    
-    func parseMenuData(from jsonString: String) -> MenuNode? {
-        let data = jsonString.data(using: .utf8)!
-        let decoder = JSONDecoder()
-        
-        do {
-            let menuData = try decoder.decode(MenuNode.self, from: data)
-            return menuData
-        } catch {
-            print("Error decoding JSON: \(error)")
-            return nil
-        }
-    }
 }
 
-let jsonData = """
-{
-    "title": "Home",
-    "viewClass": "TitleScreenView",
-    "children": [
-        {
-            "title": "Tour",
-            "viewClass": "PlaceholderModuleView",
-            "children": []
-        },
-        {
-            "title": "Browse",
-            "viewClass": "PlaceholderModuleView",
-            "children": []
-        },
-        {
-            "title": "Extras",
-            "viewClass": "PlaceholderModuleView",
-            "children": []
-        }
-    ]
-}
-"""
-
-struct ScrollingViewRepresentable: UIViewRepresentable {
-    func makeUIView(context: Context) -> ScrollingView {
-        let scrollView = ScrollingView(initialViewClass: TitleScreenView.self)
-        if let rootNode = scrollView.parseMenuData(from: jsonData) {
-            scrollView.loadTree(rootNode)
-        }
-        return scrollView
+// SwiftUI wrapper for ApplicationView
+struct ApplicationViewRepresentable: UIViewRepresentable {
+    func makeUIView(context: Context) -> ApplicationView {
+        let appView = ApplicationView(initialViewClass: TitleScreenView.self)
+        return appView
     }
     
-    func updateUIView(_ uiView: ScrollingView, context: Context) {}
+    func updateUIView(_ uiView: ApplicationView, context: Context) {}
 }
 
 struct ContentView: View {
     var body: some View {
-        ScrollingViewRepresentable()
+        ApplicationViewRepresentable()
             .edgesIgnoringSafeArea(.all)
     }
 }
