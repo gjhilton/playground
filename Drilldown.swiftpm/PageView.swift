@@ -1,13 +1,12 @@
 import UIKit
 import AudioToolbox
 
+// MARK: - UIColor Extension
+
 extension UIColor {
     convenience init?(hexString: String) {
-        var hex = hexString.trimmingCharacters(in: .alphanumerics.inverted)
-        if hex.count == 6 {
-            hex = "FF" + hex
-        }
-        guard hex.count == 8, let intVal = UInt64(hex, radix: 16) else {
+        let hex = hexString.trimmingCharacters(in: .alphanumerics.inverted)
+        guard let intVal = UInt64(hex.count == 6 ? "FF" + hex : hex, radix: 16) else {
             return nil
         }
         
@@ -20,26 +19,20 @@ extension UIColor {
     }
 }
 
-protocol PageView where Self: UIView {
+// MARK: - PageView Protocol
+
+protocol PageView: UIView {
     init(data: [String: Any], children: [PageData]?, callback: @escaping () -> Void)
 }
 
-class BasePageView: UIView {
+// MARK: - BasePageView
+
+class BasePageView: UIView, PageView {
     required init(data: [String: Any], children: [PageData]?, callback: @escaping () -> Void) {
         super.init(frame: .zero)
-        
-        if let hex = data["backgroundColour"] as? String,
-           let color = UIColor(hexString: hex) {
-            backgroundColor = color
-        } else {
-            backgroundColor = .white
-        }
-        
+        backgroundColor = UIColor(hexString: data["backgroundColour"] as? String ?? "") ?? .white
         setupView(data: data, children: children)
-        
-        DispatchQueue.main.async {
-            callback()
-        }
+        DispatchQueue.main.async(execute: callback)
     }
     
     func setupView(data: [String: Any], children: [PageData]?) {
@@ -51,12 +44,12 @@ class BasePageView: UIView {
     }
 }
 
-final class PlaceholderPageView: BasePageView, PageView {
-    override func setupView(data: [String : Any], children: [PageData]?) {
-        let title = data["title"] as? String ?? "No Title"
-        
+// MARK: - PlaceholderPageView
+
+final class PlaceholderPageView: BasePageView {
+    override func setupView(data: [String: Any], children: [PageData]?) {
         let label = UILabel()
-        label.text = title
+        label.text = data["title"] as? String ?? "No Title"
         label.textColor = .black
         label.font = .boldSystemFont(ofSize: 32)
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -69,12 +62,14 @@ final class PlaceholderPageView: BasePageView, PageView {
     }
 }
 
-final class MenuPageView: BasePageView, PageView {
+// MARK: - MenuPageView
+
+final class MenuPageView: BasePageView {
     private var buttons: [UIButton] = []
     private var childrenData: [PageData] = []
     private var buttonCallback: ((PageData) -> Void)?
     
-    override func setupView(data: [String : Any], children: [PageData]?) {
+    override func setupView(data: [String: Any], children: [PageData]?) {
         let stackView = UIStackView()
         stackView.axis = .vertical
         stackView.spacing = 10
@@ -89,34 +84,41 @@ final class MenuPageView: BasePageView, PageView {
         
         if let children = children {
             childrenData = children
-            for (index, child) in children.enumerated() {
-                let label = child.label ?? "No Label"
+            buttons = children.enumerated().map { index, child in
                 let button = UIButton(type: .system)
-                button.setTitle(label, for: .normal)
+                button.setTitle(child.label ?? "No Label", for: .normal)
                 button.titleLabel?.font = .systemFont(ofSize: 24, weight: .medium)
                 button.tag = index
                 button.addTarget(self, action: #selector(buttonPressed(_:)), for: .touchUpInside)
-                buttons.append(button)
                 stackView.addArrangedSubview(button)
+                return button
             }
         }
     }
     
     func setButtonCallback(_ callback: @escaping (PageData) -> Void) {
-        self.buttonCallback = callback
+        buttonCallback = callback
     }
     
     @objc private func buttonPressed(_ sender: UIButton) {
-        let index = sender.tag
-        guard index < childrenData.count else {
+        guard let pageData = childrenData[safe: sender.tag] else {
             print("Button index out of range")
             return
         }
         
-        let pageData = childrenData[index]
         print("Button pressed for pageData: \(pageData)")
         AudioServicesPlaySystemSound(SystemSoundID(1104))
-        
         buttonCallback?(pageData)
+    }
+}
+
+// MARK: - Array Extension
+
+extension Array {
+    subscript(safe index: Int) -> Element? {
+        guard index >= 0, index < count else {
+            return nil
+        }
+        return self[index]
     }
 }
