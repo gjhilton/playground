@@ -1,0 +1,39 @@
+#include <metal_stdlib>
+#include <SwiftUI/SwiftUI_Metal.h>
+using namespace metal;
+
+struct Droplet {
+    float2 center;
+    float radius;
+    float opacity;
+};
+
+[[ stitchable ]]
+half4 splatterShader(
+    float2 fragCoord,
+    SwiftUI::Layer layer [[texture(0)]],
+    const device Droplet *droplets [[ buffer(0) ]],
+    uint dropletCount [[ buffer(1) ]],
+    float blurAggression [[ buffer(2) ]],
+    float spikeStrength [[ buffer(3) ]]
+) {
+    half4 bg = layer.sample(fragCoord);
+    float2 uv = fragCoord;
+    half4 outColor = bg;
+
+    for (uint i = 0; i < dropletCount; i++) {
+        Droplet d = droplets[i];
+        float2 diff = uv - d.center;
+        float dist = length(diff);
+        if (dist < d.radius) {
+            float m = smoothstep(d.radius, d.radius * (1 - blurAggression), dist);
+            float ang = atan2(diff.y, diff.x) * 12.0;
+            float spike = sin(ang + dist * spikeStrength) * 0.3;
+            float mask = m * (1.0 - abs(spike));
+
+            half4 col = half4(1.0 - mask * d.opacity);
+            outColor = mix(outColor, col, d.opacity * mask);
+        }
+    }
+    return outColor;
+}
