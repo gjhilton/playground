@@ -69,23 +69,22 @@ final class ApplicationView: UIView {
     
     private func addTitlePage() {
         let titleScreenView = initialViewClass.init(onReady: { [weak self] in
-            guard let self = self else { return }
-            if let secondPageView = self.createPage(pageGuid: "0000001") {
-                self.appendPage(secondPageView)
-                self.scrollToPage(index: 1)
-            }
+            self?.addRootPage()
         })
         appendPage(titleScreenView)
     }
     
-    // Create a UIView page for a given pageGuid
-    func createPage(pageGuid: String) -> UIView? {
-        guard let pageData = pageLookup[pageGuid] else {
-            print("No page found for GUID: \(pageGuid)")
+    private func addRootPage() {
+        createAndAppendPage(pageID: "0000001")
+        scrollToPage(index: 1)
+    }
+    
+    func createPage(pageID: String) -> UIView? {
+        guard let pageData = pageLookup[pageID] else {
+            print("No page found for ID: \(pageID)")
             return nil
         }
         
-        // For now, only support "PlaceholderPageView" as a simple UIView with green background and a label
         if pageData.viewClass == "PlaceholderPageView" {
             let view = UIView()
             view.backgroundColor = .green
@@ -107,16 +106,20 @@ final class ApplicationView: UIView {
             return view
         }
         
-        // If viewClass is unknown, return a plain white UIView
         return UIView()
     }
     
-    // Append a UIView page to the scrollView
     func appendPage(_ view: UIView) {
         stackView.addArrangedSubview(view)
         views.append(view)
         view.translatesAutoresizingMaskIntoConstraints = false
         view.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor).isActive = true
+    }
+    
+    func createAndAppendPage(pageID: String) {
+        if let pageView = createPage(pageID: pageID) {
+            appendPage(pageView)
+        }
     }
     
     private func scrollToPage(index: Int) {
