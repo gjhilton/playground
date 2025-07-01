@@ -95,59 +95,20 @@ final class ApplicationViewController {
     let view: ApplicationView
     private let initialViewClass: TitlePageViewProtocol.Type
     
-    private let applicationConfigJSON = """
-    {
-        "viewClass": "MenuPageView",
-        "children": [
-            {
-                "viewClass": "MenuPageView",
-                "label": "Tour",
-                "children": [
-                    {
-                        "viewClass": "PlaceholderPageView",
-                        "label": "Location A",
-                        "data": {
-                            "title": "Location A"
-                        }
-                    },
-                    {
-                        "viewClass": "PlaceholderPageView",
-                        "label": "Location B",
-                        "data": {
-                            "title": "Location B"
-                        }
-                    }
-                ]
-            },
-            {
-                "viewClass": "PlaceholderPageView",
-                "label": "Browse",
-                "data": {
-                    "title": "Browse placeholder"
-                }
-            },
-            {
-                "viewClass": "PlaceholderPageView",
-                "label": "Extras",
-                "data": {
-                    "title": "Extras placeholder"
-                }
-            }
-        ]
-    }
-    """
-    
     init(initialViewClass: TitlePageViewProtocol.Type) {
         self.initialViewClass = initialViewClass
-        do {
-            let data = Data(applicationConfigJSON.utf8)
-            let rootCodablePage = try JSONDecoder().decode(CodablePageData.self, from: data)
+        
+        if let url = Bundle.main.url(forResource: "config", withExtension: "json"),
+           let data = try? Data(contentsOf: url),
+           let rootCodablePage = try? JSONDecoder().decode(CodablePageData.self, from: data) {
+            
             let parsedPageData = PageData(from: rootCodablePage)
             view = ApplicationView(initialViewClass: initialViewClass, pageData: parsedPageData)
-        } catch {
-            print("Error decoding JSON: \(error)")
+        } else {
+            print("❌ Failed to load or decode config.json")
             view = ApplicationView(initialViewClass: initialViewClass, pageData: nil)
         }
+        
         setup()
     }
     
