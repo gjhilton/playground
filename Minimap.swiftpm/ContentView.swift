@@ -1,3 +1,4 @@
+
 import SwiftUI
 import MapKit
 import CoreLocation
@@ -13,7 +14,7 @@ struct ContentView: View {
                              pinCoordinate: geocoder.pinCoordinate)
                 .edgesIgnoringSafeArea(.all)
                 .onAppear {
-                    // Geocode the new address when view appears
+                    // Geocode the address once view appears
                     geocoder.geocode(address: "24-30 Pier Road, Whitby, England YO21 3PU, GB")
                 }
             } else {
@@ -26,7 +27,7 @@ struct ContentView: View {
     }
 }
 
-// MARK: - MapView with Pin
+// MARK: - MapView with Pin and Auto Zoom/Pan
 
 struct CleanMapView: UIViewRepresentable {
     let centerCoordinate: CLLocationCoordinate2D
@@ -36,7 +37,6 @@ struct CleanMapView: UIViewRepresentable {
         let mapView = MKMapView()
         mapView.delegate = context.coordinator
         
-        // Use MKStandardMapConfiguration to hide landmarks
         let config = MKStandardMapConfiguration(elevationStyle: .flat)
         config.pointOfInterestFilter = .excludingAll
         mapView.preferredConfiguration = config
@@ -45,13 +45,13 @@ struct CleanMapView: UIViewRepresentable {
         mapView.isZoomEnabled = true
         mapView.isScrollEnabled = true
         
-        // Center map on user location at 200m radius
+        // Start with user location zoomed in
         let region = MKCoordinateRegion(center: centerCoordinate,
                                         latitudinalMeters: 200,
                                         longitudinalMeters: 200)
         mapView.setRegion(region, animated: false)
         
-        // Add pin annotation if available
+        // Add pin if available
         if let pinCoord = pinCoordinate {
             let annotation = MKPointAnnotation()
             annotation.coordinate = pinCoord
@@ -63,19 +63,37 @@ struct CleanMapView: UIViewRepresentable {
     }
     
     func updateUIView(_ mapView: MKMapView, context: Context) {
-        // Update the region to follow user location if needed
-        let region = MKCoordinateRegion(center: centerCoordinate,
-                                        latitudinalMeters: 200,
-                                        longitudinalMeters: 200)
-        mapView.setRegion(region, animated: true)
-        
-        // Remove old annotations except user location
+        // Remove all annotations except user location
         mapView.removeAnnotations(mapView.annotations.filter { !($0 is MKUserLocation) })
+        
+        // Add pin annotation if we have it
         if let pinCoord = pinCoordinate {
             let annotation = MKPointAnnotation()
             annotation.coordinate = pinCoord
             annotation.title = "24-30 Pier Road"
             mapView.addAnnotation(annotation)
+        }
+        
+        // If we have both user location and pin, zoom to fit both
+        if let pinCoord = pinCoordinate {
+            let userPoint = MKMapPoint(centerCoordinate)
+            let pinPoint = MKMapPoint(pinCoord)
+            
+            let rect = MKMapRect(
+                origin: MKMapPoint(x: min(userPoint.x, pinPoint.x), y: min(userPoint.y, pinPoint.y)),
+                size: MKMapSize(width: abs(userPoint.x - pinPoint.x), height: abs(userPoint.y - pinPoint.y))
+            )
+            
+            // Add padding (~30%)
+            let paddedRect = rect.insetBy(dx: -rect.size.width * 0.3, dy: -rect.size.height * 0.3)
+            
+            mapView.setVisibleMapRect(paddedRect, animated: true)
+        } else {
+            // Only user location — zoom in around it
+            let region = MKCoordinateRegion(center: centerCoordinate,
+                                            latitudinalMeters: 200,
+                                            longitudinalMeters: 200)
+            mapView.setRegion(region, animated: true)
         }
     }
     
