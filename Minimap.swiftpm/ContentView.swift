@@ -1,4 +1,3 @@
-
 import SwiftUI
 import MapKit
 import CoreLocation
@@ -13,8 +12,8 @@ struct ContentView: View {
                 CleanMapView(centerCoordinate: userLocation.coordinate,
                              pinCoordinate: geocoder.pinCoordinate)
                 .edgesIgnoringSafeArea(.all)
+                .saturation(0) // <-- Makes the map grayscale (black & white)
                 .onAppear {
-                    // Geocode the address once view appears
                     geocoder.geocode(address: "24-30 Pier Road, Whitby, England YO21 3PU, GB")
                 }
             } else {
