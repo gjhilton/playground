@@ -1,33 +1,44 @@
 import SwiftUI
 import UIKit
+import AudioToolbox
 
 // MARK: - Data Model
 
 struct PageData {
-    let viewClass: PageView.Type?   // Reference to the UIView class implementing PageView
+    let viewClass: String?
     let data: [String: Any]?
-    let childPages: [PageData]?
+    let children: [PageData]?
     let label: String?
+    
+    // Helper to map string class names to PageView types
+    func viewType() -> PageView.Type? {
+        guard let viewClass = viewClass else { return nil }
+        switch viewClass {
+        case "PlaceholderPageView": return PlaceholderPageView.self
+        case "MenuPageView": return MenuPageView.self
+        default: return nil
+        }
+    }
 }
 
 // MARK: - PageView Protocol
 
 protocol PageView where Self: UIView {
-    init(data: [String: Any], callback: @escaping () -> Void)
+    init(data: [String: Any], children: [PageData]?, callback: @escaping () -> Void)
 }
 
 // MARK: - PlaceholderPageView
 
 final class PlaceholderPageView: UIView, PageView {
-    required init(data: [String: Any], callback: @escaping () -> Void) {
+    required init(data: [String: Any], children: [PageData]?, callback: @escaping () -> Void) {
         super.init(frame: .zero)
         
-        // Set background color from data or default to white
+        // Set background color from data or default white
         if let hex = data["backgroundColour"] as? String,
            let color = UIColor(hexString: hex) {
-            self.backgroundColor = color
+            backgroundColor = color
         } else {
-            self.backgroundColor = .white
+            backgroundColor = .white
         }
         
         let title = data["title"] as? String ?? "No Title"
@@ -54,36 +65,47 @@ final class PlaceholderPageView: UIView, PageView {
     }
 }
 
-// MARK: - MenuPageView (identical to PlaceholderPageView for now)
+// MARK: - MenuPageView
 
 final class MenuPageView: UIView, PageView {
-    required init(data: [String: Any], callback: @escaping () -> Void) {
+    private var buttons: [UIButton] = []
+    
+    required init(data: [String: Any], children: [PageData]?, callback: @escaping () -> Void) {
         super.init(frame: .zero)
         
-        if let hex = data["backgroundColour"] as? String,
-           let color = UIColor(hexString: hex) {
-            self.backgroundColor = color
-        } else {
-            self.backgroundColor = .white
-        }
+        backgroundColor = .white
         
-        let title = data["title"] as? String ?? "Menu"
+        let stackView = UIStackView()
+        stackView.axis = .vertical
+        stackView.spacing = 10
+        stackView.translatesAutoresizingMaskIntoConstraints = false
         
-        let label = UILabel()
-        label.text = title
-        label.textColor = .black
-        label.font = .boldSystemFont(ofSize: 32)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(label)
-        
+        addSubview(stackView)
         NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: centerYAnchor)
+            stackView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
+            stackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
+            stackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20)
         ])
+        
+        if let children = children {
+            for child in children {
+                let label = child.label ?? "No Label"
+                let button = UIButton(type: .system)
+                button.setTitle(label, for: .normal)
+                button.titleLabel?.font = .systemFont(ofSize: 24, weight: .medium)
+                button.addTarget(self, action: #selector(buttonPressed), for: .touchUpInside)
+                buttons.append(button)
+                stackView.addArrangedSubview(button)
+            }
+        }
         
         DispatchQueue.main.async {
             callback()
         }
+    }
+    
+    @objc private func buttonPressed() {
+        AudioServicesPlaySystemSound(SystemSoundID(1104)) // Alert sound
     }
     
     required init?(coder: NSCoder) {
@@ -120,17 +142,16 @@ final class ApplicationView: UIView {
     private var views: [UIView] = []
     private var initialViewClass: TitleScreenViewProtocol.Type
     
+    // Hardcoded pageLookup for demo; normally loaded from JSON config
     let pageLookup: [String: PageData] = [
-        "0000001": PageData(
-            viewClass: PlaceholderPageView.self,
-            data: ["title": "Placeholder page"],
-            childPages: nil,
-            label: nil
-        ),
         "root": PageData(
-            viewClass: MenuPageView.self,
-            data: ["title": "Menu page", "backgroundColour": "#FFD700"],
-            childPages: nil,
+            viewClass: "MenuPageView",
+            data: nil,
+            children: [
+                PageData(viewClass: "PlaceholderPageView", data: ["title": "Tour placeholder"], children: nil, label: "Tour"),
+                PageData(viewClass: "PlaceholderPageView", data: ["title": "Browse placeholder"], children: nil, label: "Browse"),
+                PageData(viewClass: "PlaceholderPageView", data: ["title": "Extras placeholder"], children: nil, label: "Extras")
+            ],
             label: nil
         )
     ]
@@ -141,7 +162,7 @@ final class ApplicationView: UIView {
         configure()
         layoutUI()
         addTitlePage()
-        self.backgroundColor = .white
+        backgroundColor = .white
     }
     
     required init?(coder: NSCoder) {
@@ -192,17 +213,21 @@ final class ApplicationView: UIView {
     }
     
     func createAndAppendPage(pageID: String) {
-        if let page = createPage(pageID: pageID) {
+        if let pageData = pageLookup[pageID], let page = createView(from: pageData) {
             appendPage(page)
         }
     }
     
-    func createPage(pageID: String) -> UIView? {
-        guard let pageData = pageLookup[pageID], let pageClass = pageData.viewClass else {
-            print("No page found for ID: \(pageID)")
+    private func createView(from pageData: PageData) -> UIView? {
+        guard let viewType = pageData.viewType() else {
+            print("Unknown viewClass: \(pageData.viewClass ?? "nil")")
             return nil
         }
-        return pageClass.init(data: pageData.data ?? [:]) { }
+        
+        let dataDict = pageData.data ?? [:]
+        let children = pageData.children
+        
+        return viewType.init(data: dataDict, children: children, callback: {})
     }
     
     func appendPage(_ view: UIView) {
