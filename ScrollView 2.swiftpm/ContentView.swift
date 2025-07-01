@@ -373,6 +373,24 @@ final class ApplicationView: UIView {
         if let menuView = view as? MenuPageView {
             menuView.setButtonCallback { [weak self] selectedPageData in
                 guard let self = self else { return }
+                
+                // Find index of the menu page that triggered this callback
+                guard let currentIndex = self.views.firstIndex(of: menuView) else {
+                    print("Current menu view not found in views array")
+                    return
+                }
+                
+                // Remove all pages to the right of currentIndex (do NOT remove TitleScreenView at index 0)
+                if currentIndex + 1 < self.views.count {
+                    let rangeToRemove = (currentIndex + 1)..<self.views.count
+                    for index in rangeToRemove.reversed() {
+                        let viewToRemove = self.views[index]
+                        viewToRemove.removeFromSuperview()
+                        self.views.remove(at: index)
+                    }
+                }
+                
+                // Create new page and append
                 if let newPage = self.createView(from: selectedPageData) {
                     DispatchQueue.main.async {
                         self.appendPage(newPage)
