@@ -173,3 +173,4 @@ struct ContentView: View {
         ApplicationViewRepresentable(initialViewClass: TitlePageView.self)
     }
 }
+
