@@ -14,7 +14,8 @@ final class ApplicationView: UIView {
         super.init(frame: .zero)
         configure()
         layoutUI()
-        addInitialView()
+        addTitlePage()  // Renamed this method to addTitlePage
+        self.backgroundColor = .white  // Set overall background to white
     }
     
     required init?(coder: NSCoder) {
@@ -54,29 +55,28 @@ final class ApplicationView: UIView {
         ])
     }
     
-    // Adds the first view (initial page)
-    private func addInitialView() {
+    // Adds the first page (Title page)
+    private func addTitlePage() {
         let titleScreenView = initialViewClass.init(onReady: { [weak self] in
-            self?.addSecondPage()
+            self?.addPage(pageGuid: "secondPage")  // Pass pageGuid for the second page (green rectangle)
             self?.scrollToPage(index: 1)
         })
         
-        addView(titleScreenView)
+        addPage(view: titleScreenView, pageGuid: "firstPage")  // Add first page with its unique GUID
     }
     
-    // Adds a second page, which will simply be a green rectangle for now
-    private func addSecondPage() {
-        let secondPageView = UIView()
-        secondPageView.backgroundColor = .green
-        addView(secondPageView)
-    }
-    
-    // Adds a view to the stack
-    private func addView(_ view: UIView) {
-        stackView.addArrangedSubview(view)
-        views.append(view)
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor).isActive = true
+    // Adds a new page dynamically and accepts a pageGuid argument
+    private func addPage(view: UIView? = nil, color: UIColor? = nil, pageGuid: String) {
+        let pageView = view ?? UIView()
+        pageView.backgroundColor = color ?? .white  // Set the default page background to white
+        
+        // Optionally use the pageGuid for tracking purposes (you can store it in an array, dictionary, etc.)
+        print("Adding page with GUID: \(pageGuid)") // For now, we're just printing the page GUID
+        
+        stackView.addArrangedSubview(pageView)
+        views.append(pageView)
+        pageView.translatesAutoresizingMaskIntoConstraints = false
+        pageView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor).isActive = true
     }
     
     // Scroll to the desired page index
