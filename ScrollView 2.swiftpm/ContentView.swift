@@ -1,12 +1,81 @@
 import SwiftUI
 import UIKit
 
+// MARK: - Data Model
+
 struct PageData {
     let viewClass: String?
     let data: [String: Any]?
     let childPages: [PageData]?
     let label: String?
 }
+
+// MARK: - PageView Protocol
+
+protocol PageView where Self: UIView {
+    init(data: [String: Any], callback: @escaping () -> Void)
+}
+
+// MARK: - PlaceholderPageView
+
+final class PlaceholderPageView: UIView, PageView {
+    required init(data: [String: Any], callback: @escaping () -> Void) {
+        super.init(frame: .zero)
+        
+        // Set background color from data or default to white
+        if let hex = data["backgroundColour"] as? String,
+           let color = UIColor(hexString: hex) {
+            self.backgroundColor = color
+        } else {
+            self.backgroundColor = .white
+        }
+        
+        let title = data["title"] as? String ?? "No Title"
+        
+        let label = UILabel()
+        label.text = title
+        label.textColor = .black
+        label.font = .boldSystemFont(ofSize: 32)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor)
+        ])
+        
+        DispatchQueue.main.async {
+            callback()
+        }
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+// MARK: - UIColor Extension
+
+extension UIColor {
+    convenience init?(hexString: String) {
+        var hex = hexString.trimmingCharacters(in: .alphanumerics.inverted)
+        if hex.count == 6 {
+            hex = "FF" + hex  // Assume alpha if missing
+        }
+        guard hex.count == 8, let intVal = UInt64(hex, radix: 16) else {
+            return nil
+        }
+        
+        let a = CGFloat((intVal & 0xFF000000) >> 24) / 255
+        let r = CGFloat((intVal & 0x00FF0000) >> 16) / 255
+        let g = CGFloat((intVal & 0x0000FF00) >> 8) / 255
+        let b = CGFloat(intVal & 0x000000FF) / 255
+        
+        self.init(red: r, green: g, blue: b, alpha: a)
+    }
+}
+
+// MARK: - ApplicationView
 
 final class ApplicationView: UIView {
     private let scrollView = UIScrollView()
@@ -79,6 +148,12 @@ final class ApplicationView: UIView {
         scrollToPage(index: 1)
     }
     
+    func createAndAppendPage(pageID: String) {
+        if let page = createPage(pageID: pageID) {
+            appendPage(page)
+        }
+    }
+    
     func createPage(pageID: String) -> UIView? {
         guard let pageData = pageLookup[pageID] else {
             print("No page found for ID: \(pageID)")
@@ -86,24 +161,7 @@ final class ApplicationView: UIView {
         }
         
         if pageData.viewClass == "PlaceholderPageView" {
-            let view = UIView()
-            view.backgroundColor = .green
-            
-            if let title = pageData.data?["title"] as? String {
-                let label = UILabel()
-                label.text = title
-                label.textColor = .white
-                label.font = .boldSystemFont(ofSize: 32)
-                label.translatesAutoresizingMaskIntoConstraints = false
-                view.addSubview(label)
-                
-                NSLayoutConstraint.activate([
-                    label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-                    label.centerYAnchor.constraint(equalTo: view.centerYAnchor)
-                ])
-            }
-            
-            return view
+            return PlaceholderPageView(data: pageData.data ?? [:]) { }
         }
         
         return UIView()
@@ -116,19 +174,14 @@ final class ApplicationView: UIView {
         view.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor).isActive = true
     }
     
-    func createAndAppendPage(pageID: String) {
-        if let pageView = createPage(pageID: pageID) {
-            appendPage(pageView)
-        }
-    }
-    
     private func scrollToPage(index: Int) {
         let offset = CGFloat(index) * scrollView.frame.width
         scrollView.setContentOffset(CGPoint(x: offset, y: 0), animated: true)
     }
 }
 
-// SwiftUI wrapper for ApplicationView
+// MARK: - SwiftUI Integration
+
 struct ApplicationViewRepresentable: UIViewRepresentable {
     func makeUIView(context: Context) -> ApplicationView {
         ApplicationView(initialViewClass: TitleScreenView.self)
