@@ -4,7 +4,7 @@ import UIKit
 // MARK: - Data Model
 
 struct PageData {
-    let viewClass: PageView.Type?   // Changed from String? to PageView.Type?
+    let viewClass: PageView.Type?   // Direct reference to class conforming to PageView
     let data: [String: Any]?
     let childPages: [PageData]?
     let label: String?
@@ -23,6 +23,47 @@ final class PlaceholderPageView: UIView, PageView {
         super.init(frame: .zero)
         
         // Set background color from data or default to white
+        if let hex = data["backgroundColour"] as? String,
+           let color = UIColor(hexString: hex) {
+            self.backgroundColor = color
+        } else {
+            self.backgroundColor = .white
+        }
+        
+        let title = data["title"] as? String ?? "No Title"
+        
+        let label = UILabel()
+        label.text = title
+        label.textColor = .black
+        label.font = .boldSystemFont(ofSize: 32)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor)
+        ])
+        
+        DispatchQueue.main.async {
+            callback()
+        }
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+// MARK: - MenuPageView (same as PlaceholderPageView for now)
+
+final class MenuPageView: UIView, PageView {
+    required init(data: [String: Any], callback: @escaping () -> Void) {
+        // Reuse PlaceholderPageView init for identical behavior
+        PlaceholderPageView(data: data, callback: callback)
+            .translatesAutoresizingMaskIntoConstraints = false
+        // Since we can't directly call super.init from another class, replicate the code here:
+        super.init(frame: .zero)
+        
         if let hex = data["backgroundColour"] as? String,
            let color = UIColor(hexString: hex) {
             self.backgroundColor = color
@@ -85,8 +126,14 @@ final class ApplicationView: UIView {
     
     let pageLookup: [String: PageData] = [
         "0000001": PageData(
-            viewClass: PlaceholderPageView.self,  // <- Now direct reference
+            viewClass: PlaceholderPageView.self,
             data: ["title": "Placeholder page"],
+            childPages: nil,
+            label: nil
+        ),
+        "0000002": PageData(
+            viewClass: MenuPageView.self,
+            data: ["title": "Menu page", "backgroundColour": "#FFD700"], // Example color gold
             childPages: nil,
             label: nil
         )
