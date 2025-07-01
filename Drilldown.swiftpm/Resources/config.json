@@ -1,0 +1,39 @@
+{
+  "viewClass": "MenuPageView",
+  "children": [
+    {
+      "viewClass": "MenuPageView",
+      "label": "Tour",
+      "children": [
+        {
+          "viewClass": "PlaceholderPageView",
+          "label": "Location A",
+          "data": {
+            "title": "Location A"
+          }
+        },
+        {
+          "viewClass": "PlaceholderPageView",
+          "label": "Location B",
+          "data": {
+            "title": "Location B"
+          }
+        }
+      ]
+    },
+    {
+      "viewClass": "PlaceholderPageView",
+      "label": "Browse",
+      "data": {
+        "title": "Browse placeholder"
+      }
+    },
+    {
+      "viewClass": "PlaceholderPageView",
+      "label": "Extras",
+      "data": {
+        "title": "Extras placeholder"
+      }
+    }
+  ]
+}
