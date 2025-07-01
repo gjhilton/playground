@@ -2,6 +2,8 @@ import SwiftUI
 import MapKit
 import CoreLocation
 
+// MARK: - Main View
+
 struct ContentView: View {
     @StateObject private var locationManager = LocationManager()
     @StateObject private var geocoder = AddressGeocoder()
@@ -9,10 +11,11 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             if let userLocation = locationManager.location {
-                CleanMapView(centerCoordinate: userLocation.coordinate,
-                             pinCoordinate: geocoder.pinCoordinate)
+                MapWithLiveRedDotView(
+                    userLocation: userLocation.coordinate,
+                    pinLocation: geocoder.pinCoordinate
+                )
                 .edgesIgnoringSafeArea(.all)
-                .saturation(0) // <-- Makes the map grayscale (black & white)
                 .onAppear {
                     geocoder.geocode(address: "24-30 Pier Road, Whitby, England YO21 3PU, GB")
                 }
@@ -26,81 +29,114 @@ struct ContentView: View {
     }
 }
 
-// MARK: - MapView with Pin and Auto Zoom/Pan
+// MARK: - Map View with CADisplayLink Tracking
 
-struct CleanMapView: UIViewRepresentable {
-    let centerCoordinate: CLLocationCoordinate2D
-    let pinCoordinate: CLLocationCoordinate2D?
+struct MapWithLiveRedDotView: UIViewRepresentable {
+    let userLocation: CLLocationCoordinate2D
+    let pinLocation: CLLocationCoordinate2D?
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(pinLocation: pinLocation)
+    }
     
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
-        mapView.delegate = context.coordinator
+        
+        if #available(iOS 13.0, *) {
+            mapView.overrideUserInterfaceStyle = .light
+        }
         
         let config = MKStandardMapConfiguration(elevationStyle: .flat)
         config.pointOfInterestFilter = .excludingAll
         mapView.preferredConfiguration = config
         
+        mapView.delegate = context.coordinator
+        context.coordinator.mapView = mapView
+        
         mapView.showsUserLocation = true
         mapView.isZoomEnabled = true
         mapView.isScrollEnabled = true
         
-        // Start with user location zoomed in
-        let region = MKCoordinateRegion(center: centerCoordinate,
-                                        latitudinalMeters: 200,
-                                        longitudinalMeters: 200)
-        mapView.setRegion(region, animated: false)
+        // Add red dot view
+        let dotView = UIView(frame: CGRect(x: 0, y: 0, width: 12, height: 12))
+        dotView.backgroundColor = .red
+        dotView.layer.cornerRadius = 6
+        dotView.layer.masksToBounds = true
+        dotView.isUserInteractionEnabled = false
+        dotView.tag = 9999
+        mapView.addSubview(dotView)
+        context.coordinator.redDotView = dotView
         
-        // Add pin if available
-        if let pinCoord = pinCoordinate {
-            let annotation = MKPointAnnotation()
-            annotation.coordinate = pinCoord
-            annotation.title = "24-30 Pier Road"
-            mapView.addAnnotation(annotation)
+        // Initial region
+        if let pinCoord = pinLocation {
+            let userPoint = MKMapPoint(userLocation)
+            let pinPoint = MKMapPoint(pinCoord)
+            
+            let rect = MKMapRect(
+                origin: MKMapPoint(x: min(userPoint.x, pinPoint.x),
+                                   y: min(userPoint.y, pinPoint.y)),
+                size: MKMapSize(width: abs(userPoint.x - pinPoint.x),
+                                height: abs(userPoint.y - pinPoint.y))
+            )
+            
+            let paddedRect = rect.insetBy(dx: -rect.size.width * 0.3,
+                                          dy: -rect.size.height * 0.3)
+            mapView.setVisibleMapRect(paddedRect, animated: false)
+        } else {
+            let region = MKCoordinateRegion(center: userLocation,
+                                            latitudinalMeters: 200,
+                                            longitudinalMeters: 200)
+            mapView.setRegion(region, animated: false)
         }
         
         return mapView
     }
     
     func updateUIView(_ mapView: MKMapView, context: Context) {
-        // Remove all annotations except user location
-        mapView.removeAnnotations(mapView.annotations.filter { !($0 is MKUserLocation) })
-        
-        // Add pin annotation if we have it
-        if let pinCoord = pinCoordinate {
-            let annotation = MKPointAnnotation()
-            annotation.coordinate = pinCoord
-            annotation.title = "24-30 Pier Road"
-            mapView.addAnnotation(annotation)
-        }
-        
-        // If we have both user location and pin, zoom to fit both
-        if let pinCoord = pinCoordinate {
-            let userPoint = MKMapPoint(centerCoordinate)
-            let pinPoint = MKMapPoint(pinCoord)
-            
-            let rect = MKMapRect(
-                origin: MKMapPoint(x: min(userPoint.x, pinPoint.x), y: min(userPoint.y, pinPoint.y)),
-                size: MKMapSize(width: abs(userPoint.x - pinPoint.x), height: abs(userPoint.y - pinPoint.y))
-            )
-            
-            // Add padding (~30%)
-            let paddedRect = rect.insetBy(dx: -rect.size.width * 0.3, dy: -rect.size.height * 0.3)
-            
-            mapView.setVisibleMapRect(paddedRect, animated: true)
-        } else {
-            // Only user location — zoom in around it
-            let region = MKCoordinateRegion(center: centerCoordinate,
-                                            latitudinalMeters: 200,
-                                            longitudinalMeters: 200)
-            mapView.setRegion(region, animated: true)
-        }
+        context.coordinator.pinLocation = pinLocation
+        context.coordinator.updateRedDotPosition()
     }
     
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
+    class Coordinator: NSObject, MKMapViewDelegate {
+        weak var mapView: MKMapView?
+        weak var redDotView: UIView?
+        var pinLocation: CLLocationCoordinate2D?
+        var displayLink: CADisplayLink?
+        
+        init(pinLocation: CLLocationCoordinate2D?) {
+            self.pinLocation = pinLocation
+        }
+        
+        func startUpdating() {
+            stopUpdating() // prevent duplicates
+            displayLink = CADisplayLink(target: self, selector: #selector(updateLoop))
+            displayLink?.add(to: .main, forMode: .common)
+        }
+        
+        func stopUpdating() {
+            displayLink?.invalidate()
+            displayLink = nil
+        }
+        
+        @objc func updateLoop() {
+            updateRedDotPosition()
+        }
+        
+        func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
+            startUpdating()
+        }
+        
+        func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            stopUpdating()
+            updateRedDotPosition()
+        }
+        
+        func updateRedDotPosition() {
+            guard let mapView, let redDotView, let pinLocation else { return }
+            let point = mapView.convert(pinLocation, toPointTo: mapView)
+            redDotView.center = point
+        }
     }
-    
-    class Coordinator: NSObject, MKMapViewDelegate {}
 }
 
 // MARK: - Location Manager
@@ -126,7 +162,7 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        print("Failed to get location: \(error)")
+        print("Location error: \(error)")
     }
 }
 
@@ -138,15 +174,19 @@ class AddressGeocoder: NSObject, ObservableObject {
     func geocode(address: String) {
         let geocoder = CLGeocoder()
         geocoder.geocodeAddressString(address) { placemarks, error in
-            if let error = error {
-                print("Geocode failed: \(error.localizedDescription)")
-                return
-            }
             if let location = placemarks?.first?.location {
                 DispatchQueue.main.async {
                     self.pinCoordinate = location.coordinate
                 }
+            } else if let error = error {
+                print("Geocode error: \(error)")
             }
         }
     }
+}
+
+// MARK: - Preview (Optional)
+
+#Preview {
+    ContentView()
 }
