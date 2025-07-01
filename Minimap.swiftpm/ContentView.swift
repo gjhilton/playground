@@ -11,7 +11,7 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             if let userLocation = locationManager.location {
-                MapWithLiveRedDotView(
+                MapWithLiveMarkersView(
                     userLocation: userLocation.coordinate,
                     pinLocation: geocoder.pinCoordinate
                 )
@@ -29,14 +29,14 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Map View with CADisplayLink Tracking
+// MARK: - Map View with Red Dot and SF Symbol Cross
 
-struct MapWithLiveRedDotView: UIViewRepresentable {
+struct MapWithLiveMarkersView: UIViewRepresentable {
     let userLocation: CLLocationCoordinate2D
     let pinLocation: CLLocationCoordinate2D?
     
     func makeCoordinator() -> Coordinator {
-        Coordinator(pinLocation: pinLocation)
+        Coordinator(userLocation: userLocation, pinLocation: pinLocation)
     }
     
     func makeUIView(context: Context) -> MKMapView {
@@ -53,21 +53,34 @@ struct MapWithLiveRedDotView: UIViewRepresentable {
         mapView.delegate = context.coordinator
         context.coordinator.mapView = mapView
         
-        mapView.showsUserLocation = true
+        mapView.showsUserLocation = false
         mapView.isZoomEnabled = true
         mapView.isScrollEnabled = true
         
-        // Add red dot view
-        let dotView = UIView(frame: CGRect(x: 0, y: 0, width: 12, height: 12))
-        dotView.backgroundColor = .red
-        dotView.layer.cornerRadius = 6
-        dotView.layer.masksToBounds = true
-        dotView.isUserInteractionEnabled = false
-        dotView.tag = 9999
-        mapView.addSubview(dotView)
-        context.coordinator.redDotView = dotView
+        // Red dot for user location
+        let userDot = UIView(frame: CGRect(x: 0, y: 0, width: 12, height: 12))
+        userDot.backgroundColor = .red
+        userDot.layer.cornerRadius = 6
+        userDot.layer.borderColor = UIColor.white.cgColor
+        userDot.layer.borderWidth = 2
+        userDot.layer.masksToBounds = true
+        userDot.isUserInteractionEnabled = false
+        userDot.tag = 1002
+        mapView.addSubview(userDot)
+        context.coordinator.userDotView = userDot
         
-        // Initial region
+        // SF Symbol "xmark" for pin location
+        let crossImageView = UIImageView()
+        let symbolConfig = UIImage.SymbolConfiguration(pointSize: 20, weight: .bold)
+        crossImageView.image = UIImage(systemName: "xmark", withConfiguration: symbolConfig)
+        crossImageView.tintColor = .red
+        crossImageView.frame.size = CGSize(width: 20, height: 20)
+        crossImageView.isUserInteractionEnabled = false
+        crossImageView.tag = 1003
+        mapView.addSubview(crossImageView)
+        context.coordinator.crossImageView = crossImageView
+        
+        // Initial zoom
         if let pinCoord = pinLocation {
             let userPoint = MKMapPoint(userLocation)
             let pinPoint = MKMapPoint(pinCoord)
@@ -93,22 +106,28 @@ struct MapWithLiveRedDotView: UIViewRepresentable {
     }
     
     func updateUIView(_ mapView: MKMapView, context: Context) {
+        context.coordinator.userLocation = userLocation
         context.coordinator.pinLocation = pinLocation
-        context.coordinator.updateRedDotPosition()
+        context.coordinator.updateDotPositions()
     }
     
     class Coordinator: NSObject, MKMapViewDelegate {
         weak var mapView: MKMapView?
-        weak var redDotView: UIView?
+        weak var userDotView: UIView?
+        weak var crossImageView: UIImageView?
+        
+        var userLocation: CLLocationCoordinate2D
         var pinLocation: CLLocationCoordinate2D?
+        
         var displayLink: CADisplayLink?
         
-        init(pinLocation: CLLocationCoordinate2D?) {
+        init(userLocation: CLLocationCoordinate2D, pinLocation: CLLocationCoordinate2D?) {
+            self.userLocation = userLocation
             self.pinLocation = pinLocation
         }
         
         func startUpdating() {
-            stopUpdating() // prevent duplicates
+            stopUpdating()
             displayLink = CADisplayLink(target: self, selector: #selector(updateLoop))
             displayLink?.add(to: .main, forMode: .common)
         }
@@ -119,7 +138,7 @@ struct MapWithLiveRedDotView: UIViewRepresentable {
         }
         
         @objc func updateLoop() {
-            updateRedDotPosition()
+            updateDotPositions()
         }
         
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
@@ -128,13 +147,21 @@ struct MapWithLiveRedDotView: UIViewRepresentable {
         
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             stopUpdating()
-            updateRedDotPosition()
+            updateDotPositions()
         }
         
-        func updateRedDotPosition() {
-            guard let mapView, let redDotView, let pinLocation else { return }
-            let point = mapView.convert(pinLocation, toPointTo: mapView)
-            redDotView.center = point
+        func updateDotPositions() {
+            guard let mapView else { return }
+            
+            if let userDotView {
+                let point = mapView.convert(userLocation, toPointTo: mapView)
+                userDotView.center = point
+            }
+            
+            if let crossImageView, let pin = pinLocation {
+                let point = mapView.convert(pin, toPointTo: mapView)
+                crossImageView.center = point
+            }
         }
     }
 }
@@ -185,7 +212,7 @@ class AddressGeocoder: NSObject, ObservableObject {
     }
 }
 
-// MARK: - Preview (Optional)
+// MARK: - Preview
 
 #Preview {
     ContentView()
