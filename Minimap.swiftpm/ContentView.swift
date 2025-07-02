@@ -12,9 +12,7 @@ struct ContentView: View {
     )
     
     private let pinCoordinate = CLLocationCoordinate2D(latitude: 54.4885, longitude: -0.6152)
-    
     @State private var hasSetInitialRegion = false
-    @State private var isRegionTrackingEnabled = false
     
     var body: some View {
         ZStack {
@@ -30,11 +28,13 @@ struct ContentView: View {
                     Spacer()
                     HStack {
                         Spacer()
-                        Toggle("Track Region", isOn: $isRegionTrackingEnabled)
-                            .padding(10)
-                            .background(Color.white.opacity(0.8))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .padding()
+                        Button(action: updateRegion) {
+                            Label("Re-center", systemImage: "scope")
+                                .padding(10)
+                                .background(Color.white.opacity(0.8))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .padding()
                     }
                 }
             } else {
@@ -42,10 +42,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: locationManager.location) { _ in
-            updateRegion()
-        }
-        .onChange(of: isRegionTrackingEnabled) { newValue in
-            if newValue {
+            if !hasSetInitialRegion {
                 updateRegion()
             }
         }
@@ -53,17 +50,8 @@ struct ContentView: View {
     
     private func updateRegion() {
         guard let userLoc = locationManager.location?.coordinate else { return }
-        
-        if isRegionTrackingEnabled {
-            // Continuously update region to include user and pin
-            region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoordinate])
-            hasSetInitialRegion = true
-        } else if !hasSetInitialRegion {
-            // Set region once initially if tracking off
-            region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoordinate])
-            hasSetInitialRegion = true
-        }
-        // Otherwise, do not update region so user can freely pan/zoom
+        region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoordinate])
+        hasSetInitialRegion = true
     }
 }
 
