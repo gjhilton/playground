@@ -7,13 +7,15 @@ import CoreLocation
 struct ContentView: View {
     @StateObject private var locationManager = LocationManager()
     @State private var region: MKCoordinateRegion?
-    
-    private let pinCoordinate = CLLocationCoordinate2D(latitude: 54.4885, longitude: -0.6152)
+    @State private var pinCoordinate: CLLocationCoordinate2D?
     @State private var hasSetInitialRegion = false
+    
+    private let address = "30 Pier Road, Whitby, England YO21 3PU, GB"
     
     var body: some View {
         ZStack {
             if let userLocation = locationManager.location?.coordinate,
+               let pinCoord = pinCoordinate,
                let bindingRegion = Binding($region) {
                 
                 MapView(region: bindingRegion)
@@ -22,7 +24,7 @@ struct ContentView: View {
                 
                 if let region = region {
                     MapOverlays(
-                        pinCoordinate: pinCoordinate,
+                        pinCoordinate: pinCoord,
                         userCoordinate: userLocation,
                         region: region
                     )
@@ -47,25 +49,49 @@ struct ContentView: View {
                 LoadingView()
             }
         }
+        .onAppear {
+            geocodeAddress()
+            updateRegionIfNeeded()
+        }
         .onChange(of: locationManager.location) { _ in
             updateRegionIfNeeded()
         }
-        .onAppear {
+        .onChange(of: pinCoordinate) { _ in
             updateRegionIfNeeded()
+        }
+    }
+    
+    private func geocodeAddress() {
+        let geocoder = CLGeocoder()
+        geocoder.geocodeAddressString(address) { placemarks, error in
+            if let error = error {
+                print("Geocoding error: \(error.localizedDescription)")
+                return
+            }
+            
+            if let location = placemarks?.first?.location {
+                DispatchQueue.main.async {
+                    pinCoordinate = location.coordinate
+                }
+            }
         }
     }
     
     private func updateRegionIfNeeded() {
-        guard let userLoc = locationManager.location?.coordinate else { return }
-        if !hasSetInitialRegion {
-            region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoordinate])
-            hasSetInitialRegion = true
-        }
+        guard
+            let userLoc = locationManager.location?.coordinate,
+            let pinCoord = pinCoordinate,
+            !hasSetInitialRegion
+        else { return }
+        
+        region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoord])
+        hasSetInitialRegion = true
     }
     
     private func updateRegion() {
-        guard let userLoc = locationManager.location?.coordinate else { return }
-        region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoordinate])
+        guard let userLoc = locationManager.location?.coordinate,
+              let pinCoord = pinCoordinate else { return }
+        region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoord])
     }
 }
 
@@ -232,6 +258,12 @@ extension MKCoordinateRegion {
                                     longitudeDelta: (maxLon - minLon) * 1.5)
         
         return MKCoordinateRegion(center: center, span: span)
+    }
+}
+
+extension CLLocationCoordinate2D: Equatable {
+    public static func == (lhs: CLLocationCoordinate2D, rhs: CLLocationCoordinate2D) -> Bool {
+        lhs.latitude == rhs.latitude && lhs.longitude == rhs.longitude
     }
 }
 
