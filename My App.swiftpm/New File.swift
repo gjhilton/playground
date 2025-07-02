@@ -3,17 +3,20 @@ import UIKit
 import CoreText
 
 final class AnimatedTextView: UIView {
+    // MARK: Properties
+    
     private let text: String
     private let fontSize: CGFloat
+    private let trackingDuration: CFTimeInterval
+    private let opacityDuration: CFTimeInterval
     
     private var displayLink: CADisplayLink?
     private var animationStartTime: CFTimeInterval = 0
     
-    private var currentTracking: CGFloat = 10 // start kerning
-    private let trackingStartValue: CGFloat = 10
-    private let trackingEndValue: CGFloat = 20
+    private var currentTracking: CGFloat
+    private let trackingRange: ClosedRange<CGFloat> = 10...20
     
-    private var currentOpacity: Float = 0 // start invisible
+    private var currentOpacity: Float
     
     static let debugMode = false // set to false to hide red background
     
@@ -25,41 +28,24 @@ final class AnimatedTextView: UIView {
         return layer as! CATextLayer
     }
     
-    init(text: String, fontSize: CGFloat, position: CGPoint) {
+    // MARK: Initialization
+    
+    init(text: String, fontSize: CGFloat, position: CGPoint, trackingDuration: CFTimeInterval = 5, opacityDuration: CFTimeInterval = 2) {
         self.text = text
         self.fontSize = fontSize
+        self.trackingDuration = trackingDuration
+        self.opacityDuration = opacityDuration
         
-        // Calculate widest width with max tracking (no wrapping)
-        let attrStr = NSAttributedString(
-            string: text,
-            attributes: [
-                .font: UIFont.systemFont(ofSize: fontSize),
-                .kern: trackingEndValue
-            ]
-        )
+        currentTracking = trackingRange.lowerBound
+        currentOpacity = 0
         
-        let line = CTLineCreateWithAttributedString(attrStr as CFAttributedString)
-        let lineBounds = CTLineGetBoundsWithOptions(line, .useOpticalBounds)
-        
-        // width includes line width + abs(origin.x) for optical bounds + padding
-        let width = ceil(lineBounds.width + abs(lineBounds.origin.x)) + 20
+        let width = Self.calculateWidth(for: text, fontSize: fontSize, tracking: trackingRange.upperBound)
         let height = fontSize * 2
         
         super.init(frame: CGRect(x: 0, y: 0, width: width, height: height))
         
-        backgroundColor = AnimatedTextView.debugMode ? .red : .clear
-        
-        textLayer.string = makeAttributedString(withTracking: trackingStartValue)
-        textLayer.alignmentMode = .center
-        textLayer.contentsScale = UIScreen.main.scale
-        textLayer.isWrapped = false
-        textLayer.truncationMode = .none
-        
-        layer.opacity = 0
-        
-        currentTracking = trackingStartValue
-        currentOpacity = 0
-        
+        setupView()
+        setupTextLayer()
         center = position
     }
     
@@ -67,7 +53,24 @@ final class AnimatedTextView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
     
-    private func makeAttributedString(withTracking tracking: CGFloat) -> NSAttributedString {
+    // MARK: Setup
+    
+    private func setupView() {
+        backgroundColor = Self.debugMode ? .red : .clear
+    }
+    
+    private func setupTextLayer() {
+        textLayer.string = attributedString(for: currentTracking)
+        textLayer.alignmentMode = .center
+        textLayer.contentsScale = UIScreen.main.scale
+        textLayer.isWrapped = false
+        textLayer.truncationMode = .none
+        layer.opacity = currentOpacity
+    }
+    
+    // MARK: Attributed String
+    
+    private func attributedString(for tracking: CGFloat) -> NSAttributedString {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: fontSize),
             .kern: tracking,
@@ -75,6 +78,8 @@ final class AnimatedTextView: UIView {
         ]
         return NSAttributedString(string: text, attributes: attributes)
     }
+    
+    // MARK: Animation
     
     func play() {
         animationStartTime = CACurrentMediaTime()
@@ -86,37 +91,42 @@ final class AnimatedTextView: UIView {
     func rewind() {
         displayLink?.invalidate()
         displayLink = nil
-        currentTracking = trackingStartValue
+        currentTracking = trackingRange.lowerBound
         currentOpacity = 0
-        textLayer.string = makeAttributedString(withTracking: currentTracking)
+        textLayer.string = attributedString(for: currentTracking)
         layer.opacity = currentOpacity
     }
     
     @objc private func updateAnimation() {
-        let duration: CFTimeInterval = 5 // seconds
-        let opacityDuration: CFTimeInterval = 2 // seconds
         let now = CACurrentMediaTime()
         let elapsed = now - animationStartTime
         
-        // Animate opacity from 0 to 1 over 2 seconds, linear no easing
-        if elapsed < opacityDuration {
-            currentOpacity = Float(elapsed / opacityDuration)
-        } else {
-            currentOpacity = 1
-        }
+        currentOpacity = Float(min(elapsed / opacityDuration, 1))
         layer.opacity = currentOpacity
         
-        // Animate kerning from trackingStartValue to trackingEndValue over 5 seconds, no easing
-        if elapsed < duration {
-            let percent = CGFloat(elapsed / duration)
-            currentTracking = trackingStartValue + (trackingEndValue - trackingStartValue) * percent
-        } else {
-            currentTracking = trackingEndValue
-            // End animation
+        currentTracking = trackingRange.lowerBound + CGFloat(min(elapsed / trackingDuration, 1)) * (trackingRange.upperBound - trackingRange.lowerBound)
+        textLayer.string = attributedString(for: currentTracking)
+        
+        if elapsed >= trackingDuration {
             displayLink?.invalidate()
             displayLink = nil
         }
+    }
+    
+    // MARK: Helpers
+    
+    private static func calculateWidth(for text: String, fontSize: CGFloat, tracking: CGFloat) -> CGFloat {
+        let attrStr = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: UIFont.systemFont(ofSize: fontSize),
+                .kern: tracking
+            ]
+        )
         
-        textLayer.string = makeAttributedString(withTracking: currentTracking)
+        let line = CTLineCreateWithAttributedString(attrStr as CFAttributedString)
+        let lineBounds = CTLineGetBoundsWithOptions(line, .useOpticalBounds)
+        
+        return ceil(lineBounds.width + abs(lineBounds.origin.x)) + 20
     }
 }
