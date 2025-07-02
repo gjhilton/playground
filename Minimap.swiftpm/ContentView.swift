@@ -2,77 +2,127 @@ import SwiftUI
 import MapKit
 import CoreLocation
 
+// MARK: - ContentView
+
 struct ContentView: View {
     @StateObject private var locationManager = LocationManager()
-    @State private var region = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 54.4885, longitude: -0.6152),
-        span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-    )
+    @State private var region: MKCoordinateRegion?
+    @State private var pinCoordinate: CLLocationCoordinate2D?
+    @State private var hasSetInitialRegion = false
+    @State private var mapRotationDegrees: Double = 0  // Track map rotation
     
-    let pinCoordinate = CLLocationCoordinate2D(latitude: 54.4885, longitude: -0.6152)
+    private let address = "30 Pier Road, Whitby, England YO21 3PU, GB"
     
     var body: some View {
         ZStack {
-            if let userLoc = locationManager.location?.coordinate {
-                MapViewRepresentable(region: $region)
-                    .saturation(0) // grayscale map
+            if let userLocation = locationManager.location?.coordinate,
+               let pinCoord = pinCoordinate,
+               let bindingRegion = Binding($region) {
+                
+                MapView(region: bindingRegion, rotationDegrees: $mapRotationDegrees)
+                    .saturation(0)
                     .edgesIgnoringSafeArea(.all)
                 
-                GeometryReader { geo in
-                    // Red cross for pin
-                    Image(systemName: "xmark")
-                        .resizable()
-                        .frame(width: 20, height: 20)
-                        .foregroundColor(.red)
-                        .position(geo.convertCoordinateToPoint(pinCoordinate, region: region))
-                    
-                    // Red dot for user location
-                    Circle()
-                        .fill(Color.red)
-                        .frame(width: 12, height: 12)
-                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                        .position(geo.convertCoordinateToPoint(userLoc, region: region))
+                if let region = region {
+                    MapOverlays(
+                        pinCoordinate: pinCoord,
+                        userCoordinate: userLocation,
+                        region: region,
+                        rotationDegrees: mapRotationDegrees
+                    )
+                    .allowsHitTesting(false)
                 }
-                .allowsHitTesting(false)
-            } else {
+                
                 VStack {
-                    ProgressView()
-                    Text("Waiting for location…")
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button(action: updateRegion) {
+                            Text("Re-center")
+                                .padding(10)
+                                .background(Color.white.opacity(0.8))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .padding()
+                    }
                 }
+                
+            } else {
+                LoadingView()
             }
         }
         .onAppear {
-            if let userLoc = locationManager.location?.coordinate {
-                region = regionCovering(coordinates: [userLoc, pinCoordinate])
+            geocodeAddress()
+            updateRegionIfNeeded()
+        }
+        .onChange(of: locationManager.location) { _ in
+            updateRegionIfNeeded()
+        }
+        .onChange(of: pinCoordinate) { _ in
+            updateRegionIfNeeded()
+        }
+    }
+    
+    private func geocodeAddress() {
+        let geocoder = CLGeocoder()
+        geocoder.geocodeAddressString(address) { placemarks, error in
+            if let error = error {
+                print("Geocoding error: \(error.localizedDescription)")
+                return
+            }
+            
+            if let location = placemarks?.first?.location {
+                DispatchQueue.main.async {
+                    pinCoordinate = location.coordinate
+                }
             }
         }
-        .onChange(of: locationManager.location) { newLoc in
-            guard let userLoc = newLoc?.coordinate else { return }
-            region = regionCovering(coordinates: [userLoc, pinCoordinate])
-        }
+    }
+    
+    private func updateRegionIfNeeded() {
+        guard
+            let userLoc = locationManager.location?.coordinate,
+            let pinCoord = pinCoordinate,
+            !hasSetInitialRegion
+        else { return }
+        
+        region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoord])
+        hasSetInitialRegion = true
+    }
+    
+    private func updateRegion() {
+        guard let userLoc = locationManager.location?.coordinate,
+              let pinCoord = pinCoordinate else { return }
+        region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoord])
     }
 }
 
-// MARK: - MKMapView Wrapper that updates region continuously
+// MARK: - MapViewRepresentable
 
-struct MapViewRepresentable: UIViewRepresentable {
+struct MapView: UIViewRepresentable {
     @Binding var region: MKCoordinateRegion
+    @Binding var rotationDegrees: Double   // new binding for rotation
     
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
+        mapView.delegate = context.coordinator
+        
         if #available(iOS 13.0, *) {
+            let config = MKStandardMapConfiguration(elevationStyle: .flat)
+            config.pointOfInterestFilter = .excludingAll
+            mapView.preferredConfiguration = config
             mapView.overrideUserInterfaceStyle = .light
         }
-        mapView.delegate = context.coordinator
+        
         mapView.showsUserLocation = true
         mapView.isZoomEnabled = true
         mapView.isScrollEnabled = true
         mapView.setRegion(region, animated: false)
+        
         return mapView
     }
     
     func updateUIView(_ mapView: MKMapView, context: Context) {
-        // Only update if region changed significantly (to avoid feedback loops)
         if !mapView.region.center.isApproximatelyEqual(to: region.center) ||
             !mapView.region.span.isApproximatelyEqual(to: region.span) {
             mapView.setRegion(region, animated: true)
@@ -84,47 +134,106 @@ struct MapViewRepresentable: UIViewRepresentable {
     }
     
     class Coordinator: NSObject, MKMapViewDelegate {
-        var parent: MapViewRepresentable
+        let parent: MapView
         
-        init(_ parent: MapViewRepresentable) {
+        init(_ parent: MapView) {
             self.parent = parent
         }
         
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
-            // This is called continuously while user pans/zooms
             DispatchQueue.main.async {
                 self.parent.region = mapView.region
+                // Update rotation degrees from camera heading
+                let heading = mapView.camera.heading
+                self.parent.rotationDegrees = heading
             }
         }
     }
 }
 
-// MARK: - Helpers
+// MARK: - Overlays View
 
-func regionCovering(coordinates: [CLLocationCoordinate2D]) -> MKCoordinateRegion {
-    guard !coordinates.isEmpty else {
-        return MKCoordinateRegion()
+struct MapOverlays: View {
+    let pinCoordinate: CLLocationCoordinate2D
+    let userCoordinate: CLLocationCoordinate2D
+    let region: MKCoordinateRegion
+    let rotationDegrees: Double   // rotation angle of the map
+    
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                if geo.isCoordinateVisible(pinCoordinate, in: region) {
+                    PinView()
+                        .position(
+                            geo.convertCoordinateToPoint(
+                                pinCoordinate,
+                                region: region,
+                                rotationDegrees: rotationDegrees
+                            )
+                        )
+                }
+                
+                if geo.isCoordinateVisible(userCoordinate, in: region) {
+                    UserLocationView()
+                        .position(
+                            geo.convertCoordinateToPoint(
+                                userCoordinate,
+                                region: region,
+                                rotationDegrees: rotationDegrees
+                            )
+                        )
+                }
+            }
+        }
     }
-    
-    let lats = coordinates.map { $0.latitude }
-    let lons = coordinates.map { $0.longitude }
-    
-    let minLat = lats.min()!
-    let maxLat = lats.max()!
-    let minLon = lons.min()!
-    let maxLon = lons.max()!
-    
-    let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2,
-                                        longitude: (minLon + maxLon) / 2)
-    
-    let span = MKCoordinateSpan(latitudeDelta: (maxLat - minLat) * 1.5,
-                                longitudeDelta: (maxLon - minLon) * 1.5)
-    
-    return MKCoordinateRegion(center: center, span: span)
 }
 
+struct PinView: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 30, height: 30)
+            
+            Image(systemName: "mappin")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 20, height: 20)
+                .foregroundColor(.white)
+        }
+    }
+}
+
+struct UserLocationView: View {
+    var body: some View {
+        Circle()
+            .fill(Color.red.opacity(0.2))
+            .frame(width: 30, height: 30)
+            .overlay(
+                Circle()
+                    .stroke(Color.red, lineWidth: 6)
+            )
+    }
+}
+
+struct LoadingView: View {
+    var body: some View {
+        VStack(spacing: 10) {
+            ProgressView()
+            Text("Waiting for location…")
+        }
+        .padding()
+    }
+}
+
+// MARK: - Helpers
+
 extension GeometryProxy {
-    func convertCoordinateToPoint(_ coordinate: CLLocationCoordinate2D, region: MKCoordinateRegion) -> CGPoint {
+    func convertCoordinateToPoint(
+        _ coordinate: CLLocationCoordinate2D,
+        region: MKCoordinateRegion,
+        rotationDegrees: Double = 0
+    ) -> CGPoint {
         let mapWidth = size.width
         let mapHeight = size.height
         
@@ -134,13 +243,65 @@ extension GeometryProxy {
         let latDelta = region.span.latitudeDelta
         let lonDelta = region.span.longitudeDelta
         
+        // Calculate normalized x/y within the region (0...1)
         let x = (coordinate.longitude - (centerLon - lonDelta / 2)) / lonDelta
         let y = 1 - ((coordinate.latitude - (centerLat - latDelta / 2)) / latDelta)
         
         let clampedX = min(max(0, x), 1)
         let clampedY = min(max(0, y), 1)
         
-        return CGPoint(x: clampedX * mapWidth, y: clampedY * mapHeight)
+        // Convert to absolute pixel positions
+        let pointX = clampedX * mapWidth
+        let pointY = clampedY * mapHeight
+        
+        // Map is rotated by rotationDegrees, so rotate the point around center inversely to keep overlays aligned
+        let center = CGPoint(x: mapWidth / 2, y: mapHeight / 2)
+        let rad = -rotationDegrees * .pi / 180  // negative to invert rotation
+        
+        let translatedX = pointX - center.x
+        let translatedY = pointY - center.y
+        
+        let rotatedX = translatedX * cos(rad) - translatedY * sin(rad)
+        let rotatedY = translatedX * sin(rad) + translatedY * cos(rad)
+        
+        return CGPoint(x: rotatedX + center.x, y: rotatedY + center.y)
+    }
+    
+    func isCoordinateVisible(_ coordinate: CLLocationCoordinate2D, in region: MKCoordinateRegion) -> Bool {
+        let latRange = (region.center.latitude - region.span.latitudeDelta / 2)...(region.center.latitude + region.span.latitudeDelta / 2)
+        let lonRange = (region.center.longitude - region.span.longitudeDelta / 2)...(region.center.longitude + region.span.longitudeDelta / 2)
+        
+        return latRange.contains(coordinate.latitude) && lonRange.contains(coordinate.longitude)
+    }
+}
+
+extension MKCoordinateRegion {
+    static func regionCovering(coordinates: [CLLocationCoordinate2D]) -> MKCoordinateRegion {
+        guard !coordinates.isEmpty else {
+            return MKCoordinateRegion()
+        }
+        
+        let lats = coordinates.map { $0.latitude }
+        let lons = coordinates.map { $0.longitude }
+        
+        let minLat = lats.min()!
+        let maxLat = lats.max()!
+        let minLon = lons.min()!
+        let maxLon = lons.max()!
+        
+        let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2,
+                                            longitude: (minLon + maxLon) / 2)
+        
+        let span = MKCoordinateSpan(latitudeDelta: (maxLat - minLat) * 1.5,
+                                    longitudeDelta: (maxLon - minLon) * 1.5)
+        
+        return MKCoordinateRegion(center: center, span: span)
+    }
+}
+
+extension CLLocationCoordinate2D: Equatable {
+    public static func == (lhs: CLLocationCoordinate2D, rhs: CLLocationCoordinate2D) -> Bool {
+        lhs.latitude == rhs.latitude && lhs.longitude == rhs.longitude
     }
 }
 
@@ -156,9 +317,9 @@ extension MKCoordinateSpan {
     }
 }
 
-// MARK: - Location manager
+// MARK: - LocationManager
 
-class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     @Published var location: CLLocation?
     
@@ -171,13 +332,14 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        if let loc = locations.last {
-            DispatchQueue.main.async {
-                self.location = loc
-            }
+        guard let loc = locations.last else { return }
+        DispatchQueue.main.async {
+            self.location = loc
         }
     }
 }
+
+// MARK: - Preview
 
 #Preview {
     ContentView()
