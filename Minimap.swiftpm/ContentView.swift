@@ -13,6 +13,9 @@ struct ContentView: View {
     
     private let pinCoordinate = CLLocationCoordinate2D(latitude: 54.4885, longitude: -0.6152)
     
+    @State private var hasSetInitialRegion = false
+    @State private var isRegionTrackingEnabled = false
+    
     var body: some View {
         ZStack {
             if let userLoc = locationManager.location?.coordinate {
@@ -22,21 +25,45 @@ struct ContentView: View {
                 
                 MapOverlays(pinCoordinate: pinCoordinate, userCoordinate: userLoc, region: region)
                     .allowsHitTesting(false)
+                
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Toggle("Track Region", isOn: $isRegionTrackingEnabled)
+                            .padding(10)
+                            .background(Color.white.opacity(0.8))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .padding()
+                    }
+                }
             } else {
                 LoadingView()
             }
         }
-        .onAppear {
-            updateRegionIfNeeded()
-        }
         .onChange(of: locationManager.location) { _ in
-            updateRegionIfNeeded()
+            updateRegion()
+        }
+        .onChange(of: isRegionTrackingEnabled) { newValue in
+            if newValue {
+                updateRegion()
+            }
         }
     }
     
-    private func updateRegionIfNeeded() {
+    private func updateRegion() {
         guard let userLoc = locationManager.location?.coordinate else { return }
-        region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoordinate])
+        
+        if isRegionTrackingEnabled {
+            // Continuously update region to include user and pin
+            region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoordinate])
+            hasSetInitialRegion = true
+        } else if !hasSetInitialRegion {
+            // Set region once initially if tracking off
+            region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoordinate])
+            hasSetInitialRegion = true
+        }
+        // Otherwise, do not update region so user can freely pan/zoom
     }
 }
 
@@ -115,11 +142,12 @@ struct PinView: View {
         ZStack {
             Circle()
                 .fill(Color.red)
-                .frame(width: 28, height: 28)
+                .frame(width: 30, height: 30)
+            
             Image(systemName: "mappin")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 18, height: 18)
+                .frame(width: 20, height: 20)
                 .foregroundColor(.white)
         }
     }
@@ -128,11 +156,11 @@ struct PinView: View {
 struct UserLocationView: View {
     var body: some View {
         Circle()
-            .fill(Color.red.opacity(0.8))
-            .frame(width: 20, height: 20)
+            .fill(Color.red.opacity(0.2))
+            .frame(width: 30, height: 30)
             .overlay(
                 Circle()
-                    .stroke(Color.red, lineWidth: 4)
+                    .stroke(Color.red, lineWidth: 6)
             )
     }
 }
