@@ -135,7 +135,7 @@ struct MapView: UIViewRepresentable {
         context.coordinator.mapView = mapView
         
         mapView.delegate = context.coordinator
-        mapView.showsUserLocation = true
+        mapView.showsUserLocation = false
         mapView.isZoomEnabled = true
         mapView.isScrollEnabled = true
         mapView.isRotateEnabled = true
