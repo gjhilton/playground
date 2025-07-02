@@ -1,5 +1,3 @@
-// splashsceneview.swift
-
 import UIKit
 
 class SplashSceneView: UIView {
