@@ -6,11 +6,11 @@ import CoreLocation
 
 struct ContentView: View {
     var body: some View {
-        LocationMap(address: "30 Pier Road, Whitby, England YO21 3PU, GB")
+        LocationMap()
     }
 }
 
-// MARK: - LocationMap
+// MARK: - LocationMap View
 
 struct LocationMap: View {
     @StateObject private var locationManager = LocationManager()
@@ -18,10 +18,11 @@ struct LocationMap: View {
     @State private var pinCoordinate: CLLocationCoordinate2D?
     @State private var hasSetInitialRegion = false
     
+    // Points in the MKMapView's coordinate space for overlay placement
     @State private var pinPoint: CGPoint?
     @State private var userPoint: CGPoint?
     
-    let address: String
+    private let address = "30 Pier Road, Whitby, England YO21 3PU, GB"
     
     var body: some View {
         ZStack {
@@ -32,7 +33,9 @@ struct LocationMap: View {
                 MapView(
                     region: Binding(
                         get: { region },
-                        set: { newRegion in self.region = newRegion }
+                        set: { newRegion in
+                            self.region = newRegion
+                        }
                     ),
                     pinCoordinate: pinCoord,
                     userCoordinate: userLocation,
@@ -45,10 +48,12 @@ struct LocationMap: View {
                 GeometryReader { geo in
                     ZStack {
                         if let pinPoint = pinPoint {
-                            PinView().position(x: pinPoint.x, y: pinPoint.y)
+                            PinView()
+                                .position(x: pinPoint.x, y: pinPoint.y)
                         }
                         if let userPoint = userPoint {
-                            UserLocationView().position(x: userPoint.x, y: userPoint.y)
+                            UserLocationView()
+                                .position(x: userPoint.x, y: userPoint.y)
                         }
                     }
                 }
@@ -133,6 +138,7 @@ struct MapView: UIViewRepresentable {
         mapView.showsUserLocation = true
         mapView.isZoomEnabled = true
         mapView.isScrollEnabled = true
+        mapView.isRotateEnabled = true
         mapView.setRegion(region, animated: false)
         
         if #available(iOS 13.0, *) {
@@ -150,6 +156,7 @@ struct MapView: UIViewRepresentable {
             !mapView.region.span.isApproximatelyEqual(to: region.span) {
             mapView.setRegion(region, animated: true)
         }
+        // Calculate overlay points whenever UIView updates
         updateOverlayPoints(mapView: mapView)
     }
     
@@ -262,8 +269,7 @@ extension CLLocationCoordinate2D {
 
 extension MKCoordinateSpan {
     func isApproximatelyEqual(to other: MKCoordinateSpan, epsilon: Double = 0.000001) -> Bool {
-        abs(latitudeDelta - other.latitudeDelta) < epsilon &&
-        abs(longitudeDelta - other.longitudeDelta) < epsilon
+        abs(latitudeDelta - other.latitudeDelta) < epsilon && abs(longitudeDelta - other.longitudeDelta) < epsilon
     }
 }
 
