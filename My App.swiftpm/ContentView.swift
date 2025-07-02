@@ -12,7 +12,7 @@ final class SplashscreenView: UIView {
         
         textView1 = AnimatedTextView(text:"FUNERAL TROUSERS",fontSize: 24, position: CGPoint(x: xPos, y: yPos))
         
-        textView2 = AnimatedTextView(text: "presents", fontSize: 18, position: CGPoint(x: xPos, y: yPos + 30))
+        textView2 = AnimatedTextView(text: "presents", fontSize: 18, position: CGPoint(x: 400, y: yPos + 40))
         
         super.init(frame: frame)
         backgroundColor = .white
