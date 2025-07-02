@@ -5,16 +5,23 @@ import CoreLocation
 // MARK: - ContentView
 
 struct ContentView: View {
+    var body: some View {
+        LocationMap(address: "30 Pier Road, Whitby, England YO21 3PU, GB")
+    }
+}
+
+// MARK: - LocationMap
+
+struct LocationMap: View {
     @StateObject private var locationManager = LocationManager()
     @State private var region: MKCoordinateRegion?
     @State private var pinCoordinate: CLLocationCoordinate2D?
     @State private var hasSetInitialRegion = false
     
-    // Points in the MKMapView's coordinate space for overlay placement
     @State private var pinPoint: CGPoint?
     @State private var userPoint: CGPoint?
     
-    private let address = "30 Pier Road, Whitby, England YO21 3PU, GB"
+    let address: String
     
     var body: some View {
         ZStack {
@@ -25,9 +32,7 @@ struct ContentView: View {
                 MapView(
                     region: Binding(
                         get: { region },
-                        set: { newRegion in
-                            self.region = newRegion
-                        }
+                        set: { newRegion in self.region = newRegion }
                     ),
                     pinCoordinate: pinCoord,
                     userCoordinate: userLocation,
@@ -40,19 +45,12 @@ struct ContentView: View {
                 GeometryReader { geo in
                     ZStack {
                         if let pinPoint = pinPoint {
-                            PinView()
-                            // Convert mapView point to SwiftUI coordinate space:
-                                .position(x: pinPoint.x, y: pinPoint.y)
+                            PinView().position(x: pinPoint.x, y: pinPoint.y)
                         }
                         if let userPoint = userPoint {
-                            UserLocationView()
-                                .position(x: userPoint.x, y: userPoint.y)
+                            UserLocationView().position(x: userPoint.x, y: userPoint.y)
                         }
                     }
-                    // Fix for coordinate space mismatch:
-                    // Because MKMapView's convert(toPointTo:) returns point relative to MKMapView,
-                    // and SwiftUI GeometryReader's coordinate space aligns with MapView frame,
-                    // this direct use works well if MapView fills whole screen.
                 }
             } else {
                 LoadingView()
@@ -152,7 +150,6 @@ struct MapView: UIViewRepresentable {
             !mapView.region.span.isApproximatelyEqual(to: region.span) {
             mapView.setRegion(region, animated: true)
         }
-        // Calculate overlay points whenever UIView updates
         updateOverlayPoints(mapView: mapView)
     }
     
@@ -265,7 +262,8 @@ extension CLLocationCoordinate2D {
 
 extension MKCoordinateSpan {
     func isApproximatelyEqual(to other: MKCoordinateSpan, epsilon: Double = 0.000001) -> Bool {
-        abs(latitudeDelta - other.latitudeDelta) < epsilon && abs(longitudeDelta - other.longitudeDelta) < epsilon
+        abs(latitudeDelta - other.latitudeDelta) < epsilon &&
+        abs(longitudeDelta - other.longitudeDelta) < epsilon
     }
 }
 
