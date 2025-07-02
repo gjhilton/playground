@@ -6,13 +6,10 @@ import CoreLocation
 
 struct ContentView: View {
     @StateObject private var locationManager = LocationManager()
-    @State private var region = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 54.4885, longitude: -0.6152),
-        span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-    )
+    @State private var region = MKCoordinateRegion()
+    @State private var hasSetInitialRegion = false
     
     private let pinCoordinate = CLLocationCoordinate2D(latitude: 54.4885, longitude: -0.6152)
-    @State private var hasSetInitialRegion = false
     
     var body: some View {
         ZStack {
@@ -28,8 +25,11 @@ struct ContentView: View {
                     Spacer()
                     HStack {
                         Spacer()
-                        Button(action: updateRegion) {
-                            Label("Re-center", systemImage: "scope")
+                        Button(action: {
+                            region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoordinate])
+                            hasSetInitialRegion = true
+                        }) {
+                            Label("Re-center", systemImage: "location.north.line")
                                 .padding(10)
                                 .background(Color.white.opacity(0.8))
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -42,16 +42,11 @@ struct ContentView: View {
             }
         }
         .onChange(of: locationManager.location) { _ in
-            if !hasSetInitialRegion {
-                updateRegion()
+            if !hasSetInitialRegion, let userLoc = locationManager.location?.coordinate {
+                region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoordinate])
+                hasSetInitialRegion = true
             }
         }
-    }
-    
-    private func updateRegion() {
-        guard let userLoc = locationManager.location?.coordinate else { return }
-        region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoordinate])
-        hasSetInitialRegion = true
     }
 }
 
