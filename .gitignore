@@ -63,3 +63,4 @@ fastlane/test_output
 /Drilldown.swiftpm/.swiftpm/playgrounds/**
 /Minimap.swiftpm/.swiftpm/playgrounds/**
 /My App.swiftpm/.swiftpm/playgrounds/**
+/Animate.swiftpm/.swiftpm/playgrounds/**
