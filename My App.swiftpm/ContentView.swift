@@ -6,23 +6,24 @@ final class SplashscreenView: UIView {
     private let textView1: AnimatedTextView
     private let textView2: AnimatedTextView
     
-    override init(frame: CGRect) {
-        let xPos: CGFloat = 200
+    init() {
         let yPos: CGFloat = 200
         
-        textView1 = AnimatedTextView(text:"FUNERAL TROUSERS",fontSize: 24, position: CGPoint(x: 400, y: yPos))
-        
+        textView1 = AnimatedTextView(text: "FUNERAL TROUSERS", fontSize: 24, position: CGPoint(x: 400, y: yPos))
         textView2 = AnimatedTextView(text: "presents", fontSize: 18, position: CGPoint(x: 700, y: yPos + 40))
         
-        super.init(frame: frame)
-        backgroundColor = .white
-        
-        addSubview(textView1)
-        addSubview(textView2)
+        super.init(frame: .zero)
+        setupView()
     }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+    
+    private func setupView() {
+        backgroundColor = .white
+        addSubview(textView1)
+        addSubview(textView2)
     }
     
     func play() {
@@ -60,7 +61,7 @@ struct SplashscreenViewRepresentable: UIViewRepresentable {
 
 struct ContentView: View {
     @State private var isPlaying = false
-    private let splashscreen = SplashscreenViewRepresentable()
+    @State private var splashscreen = SplashscreenViewRepresentable()
     
     var body: some View {
         VStack {
@@ -69,22 +70,26 @@ struct ContentView: View {
             
             Spacer()
             
-            HStack(spacing: 40) {
-                Button("Play") {
-                    splashscreen.play()
-                    isPlaying = true
-                }
-                .disabled(isPlaying)
-                
-                Button("Rewind") {
-                    splashscreen.rewind()
-                    isPlaying = false
-                }
-                .disabled(!isPlaying)
-            }
-            .padding(.bottom, 30)
+            controlButtons
         }
         .padding(.horizontal, 20)
+    }
+    
+    var controlButtons: some View {
+        HStack(spacing: 40) {
+            Button("Play") {
+                splashscreen.play()
+                isPlaying = true
+            }
+            .disabled(isPlaying)
+            
+            Button("Rewind") {
+                splashscreen.rewind()
+                isPlaying = false
+            }
+            .disabled(!isPlaying)
+        }
+        .padding(.bottom, 30)
     }
 }
 
