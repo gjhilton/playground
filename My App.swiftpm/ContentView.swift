@@ -1,6 +1,7 @@
 import SwiftUI
 import CoreText
 
+// UIView that draws Core Text attributed string
 class CoreTextUIView: UIView {
     private let attrString: NSAttributedString
     
@@ -12,9 +13,7 @@ class CoreTextUIView: UIView {
         isOpaque = false
     }
     
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
+    required init?(coder: NSCoder) { fatalError() }
     
     static func measure(attrString: NSAttributedString) -> CGSize {
         let framesetter = CTFramesetterCreateWithAttributedString(attrString)
@@ -37,15 +36,16 @@ class CoreTextUIView: UIView {
     }
 }
 
+// SwiftUI wrapper for CoreTextUIView
 struct AnimatedTextView: UIViewRepresentable {
     let text: String
+    private let attributedString: NSAttributedString
+    let intrinsicSize: CGSize
     
-    private var attributedString: NSAttributedString {
-        AnimatedTextView.makeAttributedString(from: text)
-    }
-    
-    private var intrinsicSize: CGSize {
-        CoreTextUIView.measure(attrString: attributedString)
+    init(text: String) {
+        self.text = text
+        self.attributedString = AnimatedTextView.makeAttributedString(from: text)
+        self.intrinsicSize = CoreTextUIView.measure(attrString: attributedString)
     }
     
     func makeUIView(context: Context) -> CoreTextUIView {
@@ -68,20 +68,39 @@ extension AnimatedTextView {
     }
 }
 
+// Splash screen with AnimatedTextView and animation buttons
 struct SplashScreenView: View {
-    // Example arbitrary position (can be changed)
-    @State private var textPosition = CGPoint(x: 200, y: 100)
+    @State private var textPosition = CGPoint(x: 100, y: 100)
+    @State private var opacity: Double = 0
+    
+    private let animatedText = AnimatedTextView(text: "Funeral Trousers")
     
     var body: some View {
         ZStack {
-            Color.white
-                .ignoresSafeArea()
-            AnimatedTextView(text: "Funeral Trousers")
-                .frame(
-                    width: CoreTextUIView.measure(attrString: AnimatedTextView.makeAttributedString(from: "Funeral Trousers")).width,
-                    height: CoreTextUIView.measure(attrString: AnimatedTextView.makeAttributedString(from: "Funeral Trousers")).height
-                )
+            Color.white.ignoresSafeArea()
+            
+            animatedText
+                .frame(width: animatedText.intrinsicSize.width, height: animatedText.intrinsicSize.height)
                 .position(textPosition)
+                .opacity(opacity)
+            
+            VStack {
+                Spacer()
+                HStack(spacing: 20) {
+                    Button("Animate Opacity") {
+                        opacity = 0
+                        withAnimation(.linear(duration: 1)) {
+                            opacity = 1
+                        }
+                    }
+                    Button("Reset") {
+                        withAnimation(nil) {
+                            opacity = 0
+                        }
+                    }
+                }
+                .padding()
+            }
         }
     }
 }
