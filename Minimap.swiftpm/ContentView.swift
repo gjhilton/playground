@@ -19,21 +19,30 @@ struct ContentView: View {
                     .edgesIgnoringSafeArea(.all)
                 
                 GeometryReader { geo in
-                    // Red cross for pin location
-                    Image(systemName: "xmark")
-                        .resizable()
-                        .frame(width: 20, height: 20)
-                        .foregroundColor(.red)
-                        .position(geo.convertCoordinateToPoint(pinCoordinate, region: region))
+                    // Pin: white mappin on solid red circle
+                    ZStack {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 28, height: 28)
+                        Image(systemName: "mappin")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 18, height: 18)
+                            .foregroundColor(.white)
+                    }
+                    .position(geo.convertCoordinateToPoint(pinCoordinate, region: region))
                     
-                    // Red dot for user location
+                    // User location: red circle with thick border and 80% transparent fill
                     Circle()
-                        .fill(Color.red)
-                        .frame(width: 12, height: 12)
-                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        .fill(Color.red.opacity(0.8))
+                        .frame(width: 20, height: 20)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.red, lineWidth: 4)
+                        )
                         .position(geo.convertCoordinateToPoint(userLoc, region: region))
                 }
-                .allowsHitTesting(false) // pass touches through overlays
+                .allowsHitTesting(false)
             } else {
                 VStack {
                     ProgressView()
@@ -81,7 +90,7 @@ struct MapViewRepresentable: UIViewRepresentable {
     }
     
     func updateUIView(_ mapView: MKMapView, context: Context) {
-        // Avoid updating region if roughly the same to prevent jitter
+        // Avoid jitter updating if approx same
         if !mapView.region.center.isApproximatelyEqual(to: region.center) ||
             !mapView.region.span.isApproximatelyEqual(to: region.span) {
             mapView.setRegion(region, animated: true)
@@ -100,7 +109,6 @@ struct MapViewRepresentable: UIViewRepresentable {
         }
         
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
-            // Called continuously during pan/zoom
             DispatchQueue.main.async {
                 self.parent.region = mapView.region
             }
