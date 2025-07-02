@@ -1,4 +1,5 @@
 import UIKit
+import SwiftUI
 
 class SplashSceneView: UIView {
     var duration: TimeInterval { 0 }
@@ -57,36 +58,19 @@ class SplashSceneTitle: SplashSceneView {
     }
 }
 
-protocol SplashPageViewDelegate: AnyObject {
-    func splashDidFinish()
-}
-
 class SplashPageView: UIViewController {
     private var scenes: [SplashSceneView] = []
     private var currentIndex = -1
     private var currentSceneView: SplashSceneView?
-    private var nextSceneView: SplashSceneView?
     private var timer: Timer?
     private var isTransitioning = false
-    private var hasStarted = false
     
-    private let replayButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.setTitle("Replay", for: .normal)
-        button.titleLabel?.font = .boldSystemFont(ofSize: 18)
-        button.tintColor = .white
-        button.backgroundColor = UIColor(white: 0.0, alpha: 0.5)
-        button.layer.cornerRadius = 8
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
-    }()
-    
-    weak var delegate: SplashPageViewDelegate?
+    /// Called when splash sequence finishes (all scenes shown and slid off)
+    var onFinish: (() -> Void)?
     
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
-        setupReplayButton()
         setupScenes()
         
         NotificationCenter.default.addObserver(self, selector: #selector(handleInterruption), name: UIApplication.willResignActiveNotification, object: nil)
@@ -94,51 +78,43 @@ class SplashPageView: UIViewController {
         NotificationCenter.default.addObserver(self, selector: #selector(handleOrientationChange), name: UIDevice.orientationDidChangeNotification, object: nil)
     }
     
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        if !hasStarted {
-            hasStarted = true
-            startSequence()
-        }
-    }
-    
-    private func setupReplayButton() {
-        view.addSubview(replayButton)
-        NSLayoutConstraint.activate([
-            replayButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
-            replayButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            replayButton.widthAnchor.constraint(equalToConstant: 100),
-            replayButton.heightAnchor.constraint(equalToConstant: 44)
-        ])
-        replayButton.addTarget(self, action: #selector(restartSequence), for: .touchUpInside)
-    }
-    
     private func setupScenes() {
         scenes = [SplashScenePresents(), SplashSceneTitle()]
         currentIndex = -1
+        currentSceneView?.removeFromSuperview()
+        currentSceneView = nil
     }
     
-    private func startSequence() {
-        currentSceneView?.removeFromSuperview()
-        nextSceneView?.removeFromSuperview()
-        currentSceneView = nil
-        nextSceneView = nil
+    func run() {
+        guard isViewLoaded && view.window != nil else { return }
         currentIndex = -1
         slideInNextScene()
     }
     
     private func slideInNextScene() {
         guard !isTransitioning else { return }
-        
         currentIndex += 1
-        guard currentIndex < scenes.count else {
+        
+        if currentIndex >= scenes.count {
+            guard let lastView = currentSceneView else {
+                onFinish?()
+                return
+            }
+            isTransitioning = true
+            UIView.animate(withDuration: 2.0, delay: 0, options: [.curveEaseInOut], animations: {
+                lastView.frame = self.view.bounds.offsetBy(dx: -self.view.bounds.width, dy: 0)
+            }, completion: { _ in
+                lastView.removeFromSuperview()
+                self.currentSceneView = nil
+                self.isTransitioning = false
+                self.onFinish?()
+            })
             return
         }
         
         let scene = scenes[currentIndex]
         scene.frame = view.bounds.offsetBy(dx: view.bounds.width, dy: 0)
         view.addSubview(scene)
-        view.bringSubviewToFront(replayButton)
         isTransitioning = true
         
         UIView.animate(withDuration: 2.0, delay: 0, options: [.curveEaseInOut], animations: {
@@ -157,20 +133,17 @@ class SplashPageView: UIViewController {
         
         let nextIndex = currentIndex + 1
         if nextIndex >= scenes.count {
-            UIView.animate(withDuration: 2.0, delay: 0, options: [.curveEaseInOut], animations: {
-                self.currentSceneView?.frame = self.view.bounds.offsetBy(dx: -self.view.bounds.width, dy: 0)
-            }, completion: { _ in
-                self.currentSceneView?.removeFromSuperview()
-                self.currentSceneView = nil
-            })
+            slideInNextScene()
             return
         }
         
-        let currentView = currentSceneView!
+        guard let currentView = currentSceneView else {
+            slideInNextScene()
+            return
+        }
         let nextView = scenes[nextIndex]
         nextView.frame = view.bounds.offsetBy(dx: view.bounds.width, dy: 0)
         view.addSubview(nextView)
-        view.bringSubviewToFront(replayButton)
         isTransitioning = true
         
         UIView.animate(withDuration: 2.0, delay: 0, options: [.curveEaseInOut], animations: {
@@ -192,59 +165,44 @@ class SplashPageView: UIViewController {
     }
     
     @objc private func handleInterruptionEnded() {
-        restartSequence()
+        restart()
     }
     
     @objc private func handleOrientationChange() {
-        restartSequence()
+        restart()
     }
     
-    @objc private func restartSequence() {
+    private func restart() {
         timer?.invalidate()
         currentSceneView?.removeFromSuperview()
-        nextSceneView?.removeFromSuperview()
         currentSceneView = nil
-        nextSceneView = nil
-        hasStarted = false
+        currentIndex = -1
         setupScenes()
         if isViewLoaded && view.window != nil {
-            startSequence()
+            run()
         }
     }
 }
 
-import SwiftUI
-
 struct ContentView: UIViewControllerRepresentable {
-    @State private var showSplash = true
+    @State private var splashFinished = false
     
     func makeUIViewController(context: Context) -> UIViewController {
-        if showSplash {
-            let splash = SplashPageView()
-            splash.delegate = context.coordinator
-            return splash
+        if splashFinished {
+            return UIViewController() // Empty or main content here
         } else {
-            return UIViewController()
+            let splash = SplashPageView()
+            splash.onFinish = {
+                DispatchQueue.main.async {
+                    splashFinished = true
+                }
+            }
+            DispatchQueue.main.async {
+                splash.run()
+            }
+            return splash
         }
     }
     
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(parent: self)
-    }
-    
-    class Coordinator: NSObject, SplashPageViewDelegate {
-        var parent: ContentView
-        
-        init(parent: ContentView) {
-            self.parent = parent
-        }
-        
-        func splashDidFinish() {
-            DispatchQueue.main.async {
-                self.parent.showSplash = false
-            }
-        }
-    }
 }
