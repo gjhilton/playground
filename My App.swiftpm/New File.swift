@@ -6,61 +6,116 @@ final class AnimatedTextView: UIView {
     private let text: String
     private let fontSize: CGFloat
     
+    private var displayLink: CADisplayLink?
+    private var animationStartTime: CFTimeInterval = 0
+    
+    private var currentTracking: CGFloat = 10 // start kerning
+    private let trackingStartValue: CGFloat = 10
+    private let trackingEndValue: CGFloat = 20
+    
+    private var currentOpacity: Float = 0 // start invisible
+    
+    override class var layerClass: AnyClass {
+        return CATextLayer.self
+    }
+    
+    private var textLayer: CATextLayer {
+        return layer as! CATextLayer
+    }
+    
     init(text: String, fontSize: CGFloat, position: CGPoint) {
         self.text = text
         self.fontSize = fontSize
+        
+        // Calculate widest width with max tracking (no wrapping)
+        let attrStr = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: UIFont.systemFont(ofSize: fontSize),
+                .kern: trackingEndValue
+            ]
+        )
+        
+        let line = CTLineCreateWithAttributedString(attrStr as CFAttributedString)
+        let lineBounds = CTLineGetBoundsWithOptions(line, .useOpticalBounds)
+        
+        // width includes line width + abs(origin.x) for optical bounds + padding
+        let width = ceil(lineBounds.width + abs(lineBounds.origin.x)) + 20
         let height = fontSize * 2
-        let width: CGFloat = 300
+        
         super.init(frame: CGRect(x: 0, y: 0, width: width, height: height))
+        
         backgroundColor = .red
         
-        center = position
-        isOpaque = false
+        textLayer.string = makeAttributedString(withTracking: trackingStartValue)
+        textLayer.alignmentMode = .center
+        textLayer.contentsScale = UIScreen.main.scale
+        textLayer.isWrapped = false
+        textLayer.truncationMode = .none
         
-        setNeedsDisplay()
+        layer.opacity = 0
+        
+        currentTracking = trackingStartValue
+        currentOpacity = 0
+        
+        // Position the view by setting its center, keeping the frame size wide enough to avoid clipping
+        center = position
     }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
     
-    override func draw(_ rect: CGRect) {
-        super.draw(rect)
-        
-        guard let context = UIGraphicsGetCurrentContext() else { return }
-        
-        // Flip the coordinate system because Core Text's origin is bottom-left
-        context.textMatrix = .identity
-        context.translateBy(x: 0, y: bounds.height)
-        context.scaleBy(x: 1, y: -1)
-        
-        // Create paragraph style with center alignment
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.alignment = .center
-        
-        // Create attributed string with font and paragraph style
+    private func makeAttributedString(withTracking tracking: CGFloat) -> NSAttributedString {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: fontSize),
-            .foregroundColor: UIColor.black,
-            .paragraphStyle: paragraphStyle
+            .kern: tracking,
+            .foregroundColor: UIColor.black.cgColor
         ]
-        
-        let attributedString = NSAttributedString(string: text, attributes: attributes)
-        
-        // Create framesetter and frame
-        let framesetter = CTFramesetterCreateWithAttributedString(attributedString)
-        let path = CGPath(rect: bounds, transform: nil)
-        let frame = CTFramesetterCreateFrame(framesetter, CFRangeMake(0, attributedString.length), path, nil)
-        
-        // Draw the text frame
-        CTFrameDraw(frame, context)
+        return NSAttributedString(string: text, attributes: attributes)
     }
     
     func play() {
-        AudioServicesPlaySystemSound(SystemSoundID(1104))
+        animationStartTime = CACurrentMediaTime()
+        displayLink?.invalidate()
+        displayLink = CADisplayLink(target: self, selector: #selector(updateAnimation))
+        displayLink?.add(to: .main, forMode: .default)
     }
     
     func rewind() {
-        AudioServicesPlaySystemSound(SystemSoundID(1104))
+        displayLink?.invalidate()
+        displayLink = nil
+        currentTracking = trackingStartValue
+        currentOpacity = 0
+        textLayer.string = makeAttributedString(withTracking: currentTracking)
+        layer.opacity = currentOpacity
+    }
+    
+    @objc private func updateAnimation() {
+        let duration: CFTimeInterval = 5 // seconds
+        let opacityDuration: CFTimeInterval = 2 // seconds
+        let now = CACurrentMediaTime()
+        let elapsed = now - animationStartTime
+        
+        // Animate opacity from 0 to 1 over 2 seconds, linear no easing
+        if elapsed < opacityDuration {
+            currentOpacity = Float(elapsed / opacityDuration)
+        } else {
+            currentOpacity = 1
+        }
+        layer.opacity = currentOpacity
+        
+        // Animate kerning from trackingStartValue to trackingEndValue over 5 seconds, no easing
+        if elapsed < duration {
+            let percent = CGFloat(elapsed / duration)
+            currentTracking = trackingStartValue + (trackingEndValue - trackingStartValue) * percent
+        } else {
+            currentTracking = trackingEndValue
+            // End animation
+            displayLink?.invalidate()
+            displayLink = nil
+        }
+        
+        textLayer.string = makeAttributedString(withTracking: currentTracking)
     }
 }
