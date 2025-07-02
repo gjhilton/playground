@@ -2,6 +2,8 @@ import SwiftUI
 import MapKit
 import CoreLocation
 
+// MARK: - ContentView
+
 struct ContentView: View {
     @StateObject private var locationManager = LocationManager()
     @State private var region = MKCoordinateRegion(
@@ -9,78 +11,51 @@ struct ContentView: View {
         span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
     )
     
-    let pinCoordinate = CLLocationCoordinate2D(latitude: 54.4885, longitude: -0.6152)
+    private let pinCoordinate = CLLocationCoordinate2D(latitude: 54.4885, longitude: -0.6152)
     
     var body: some View {
         ZStack {
             if let userLoc = locationManager.location?.coordinate {
-                MapViewRepresentable(region: $region)
-                    .saturation(0) // grayscale map only
+                MapView(region: $region)
+                    .saturation(0) // grayscale map
                     .edgesIgnoringSafeArea(.all)
                 
-                GeometryReader { geo in
-                    // Pin: white mappin on solid red circle
-                    ZStack {
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 28, height: 28)
-                        Image(systemName: "mappin")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 18, height: 18)
-                            .foregroundColor(.white)
-                    }
-                    .position(geo.convertCoordinateToPoint(pinCoordinate, region: region))
-                    
-                    // User location: red circle with thick border and 80% transparent fill
-                    Circle()
-                        .fill(Color.red.opacity(0.8))
-                        .frame(width: 20, height: 20)
-                        .overlay(
-                            Circle()
-                                .stroke(Color.red, lineWidth: 4)
-                        )
-                        .position(geo.convertCoordinateToPoint(userLoc, region: region))
-                }
-                .allowsHitTesting(false)
+                MapOverlays(pinCoordinate: pinCoordinate, userCoordinate: userLoc, region: region)
+                    .allowsHitTesting(false)
             } else {
-                VStack {
-                    ProgressView()
-                    Text("Waiting for location…")
-                }
+                LoadingView()
             }
         }
         .onAppear {
-            if let userLoc = locationManager.location?.coordinate {
-                region = regionCovering(coordinates: [userLoc, pinCoordinate])
-            }
+            updateRegionIfNeeded()
         }
-        .onChange(of: locationManager.location) { newLoc in
-            guard let userLoc = newLoc?.coordinate else { return }
-            region = regionCovering(coordinates: [userLoc, pinCoordinate])
+        .onChange(of: locationManager.location) { _ in
+            updateRegionIfNeeded()
         }
+    }
+    
+    private func updateRegionIfNeeded() {
+        guard let userLoc = locationManager.location?.coordinate else { return }
+        region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoordinate])
     }
 }
 
-// MARK: - MKMapView wrapper
+// MARK: - MapViewRepresentable
 
-struct MapViewRepresentable: UIViewRepresentable {
+struct MapView: UIViewRepresentable {
     @Binding var region: MKCoordinateRegion
     
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
+        mapView.delegate = context.coordinator
         
         if #available(iOS 13.0, *) {
-            // Configure map to hide POIs but show streets
             let config = MKStandardMapConfiguration(elevationStyle: .flat)
             config.pointOfInterestFilter = .excludingAll
             mapView.preferredConfiguration = config
-            
-            // Force light mode map style
             mapView.overrideUserInterfaceStyle = .light
         }
         
-        mapView.delegate = context.coordinator
         mapView.showsUserLocation = true
         mapView.isZoomEnabled = true
         mapView.isScrollEnabled = true
@@ -90,7 +65,6 @@ struct MapViewRepresentable: UIViewRepresentable {
     }
     
     func updateUIView(_ mapView: MKMapView, context: Context) {
-        // Avoid jitter updating if approx same
         if !mapView.region.center.isApproximatelyEqual(to: region.center) ||
             !mapView.region.span.isApproximatelyEqual(to: region.span) {
             mapView.setRegion(region, animated: true)
@@ -102,9 +76,9 @@ struct MapViewRepresentable: UIViewRepresentable {
     }
     
     class Coordinator: NSObject, MKMapViewDelegate {
-        var parent: MapViewRepresentable
+        let parent: MapView
         
-        init(_ parent: MapViewRepresentable) {
+        init(_ parent: MapView) {
             self.parent = parent
         }
         
@@ -116,29 +90,64 @@ struct MapViewRepresentable: UIViewRepresentable {
     }
 }
 
-// MARK: - Helper functions
+// MARK: - Overlays View
 
-func regionCovering(coordinates: [CLLocationCoordinate2D]) -> MKCoordinateRegion {
-    guard !coordinates.isEmpty else {
-        return MKCoordinateRegion()
+struct MapOverlays: View {
+    let pinCoordinate: CLLocationCoordinate2D
+    let userCoordinate: CLLocationCoordinate2D
+    let region: MKCoordinateRegion
+    
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                PinView()
+                    .position(geo.convertCoordinateToPoint(pinCoordinate, region: region))
+                
+                UserLocationView()
+                    .position(geo.convertCoordinateToPoint(userCoordinate, region: region))
+            }
+        }
     }
-    
-    let lats = coordinates.map { $0.latitude }
-    let lons = coordinates.map { $0.longitude }
-    
-    let minLat = lats.min()!
-    let maxLat = lats.max()!
-    let minLon = lons.min()!
-    let maxLon = lons.max()!
-    
-    let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2,
-                                        longitude: (minLon + maxLon) / 2)
-    
-    let span = MKCoordinateSpan(latitudeDelta: (maxLat - minLat) * 1.5,
-                                longitudeDelta: (maxLon - minLon) * 1.5)
-    
-    return MKCoordinateRegion(center: center, span: span)
 }
+
+struct PinView: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 28, height: 28)
+            Image(systemName: "mappin")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+                .foregroundColor(.white)
+        }
+    }
+}
+
+struct UserLocationView: View {
+    var body: some View {
+        Circle()
+            .fill(Color.red.opacity(0.8))
+            .frame(width: 20, height: 20)
+            .overlay(
+                Circle()
+                    .stroke(Color.red, lineWidth: 4)
+            )
+    }
+}
+
+struct LoadingView: View {
+    var body: some View {
+        VStack(spacing: 10) {
+            ProgressView()
+            Text("Waiting for location…")
+        }
+        .padding()
+    }
+}
+
+// MARK: - Helpers
 
 extension GeometryProxy {
     func convertCoordinateToPoint(_ coordinate: CLLocationCoordinate2D, region: MKCoordinateRegion) -> CGPoint {
@@ -161,6 +170,30 @@ extension GeometryProxy {
     }
 }
 
+extension MKCoordinateRegion {
+    static func regionCovering(coordinates: [CLLocationCoordinate2D]) -> MKCoordinateRegion {
+        guard !coordinates.isEmpty else {
+            return MKCoordinateRegion()
+        }
+        
+        let lats = coordinates.map { $0.latitude }
+        let lons = coordinates.map { $0.longitude }
+        
+        let minLat = lats.min()!
+        let maxLat = lats.max()!
+        let minLon = lons.min()!
+        let maxLon = lons.max()!
+        
+        let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2,
+                                            longitude: (minLon + maxLon) / 2)
+        
+        let span = MKCoordinateSpan(latitudeDelta: (maxLat - minLat) * 1.5,
+                                    longitudeDelta: (maxLon - minLon) * 1.5)
+        
+        return MKCoordinateRegion(center: center, span: span)
+    }
+}
+
 extension CLLocationCoordinate2D {
     func isApproximatelyEqual(to other: CLLocationCoordinate2D, epsilon: Double = 0.000001) -> Bool {
         abs(latitude - other.latitude) < epsilon && abs(longitude - other.longitude) < epsilon
@@ -173,9 +206,9 @@ extension MKCoordinateSpan {
     }
 }
 
-// MARK: - Location Manager
+// MARK: - LocationManager
 
-class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     @Published var location: CLLocation?
     
@@ -188,13 +221,14 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        if let loc = locations.last {
-            DispatchQueue.main.async {
-                self.location = loc
-            }
+        guard let loc = locations.last else { return }
+        DispatchQueue.main.async {
+            self.location = loc
         }
     }
 }
+
+// MARK: - Preview
 
 #Preview {
     ContentView()
