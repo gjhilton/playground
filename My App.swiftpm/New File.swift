@@ -15,6 +15,8 @@ final class AnimatedTextView: UIView {
     
     private var currentOpacity: Float = 0 // start invisible
     
+    static let debugMode = false // set to false to hide red background
+    
     override class var layerClass: AnyClass {
         return CATextLayer.self
     }
@@ -45,7 +47,7 @@ final class AnimatedTextView: UIView {
         
         super.init(frame: CGRect(x: 0, y: 0, width: width, height: height))
         
-        backgroundColor = .red
+        backgroundColor = AnimatedTextView.debugMode ? .red : .clear
         
         textLayer.string = makeAttributedString(withTracking: trackingStartValue)
         textLayer.alignmentMode = .center
@@ -58,7 +60,6 @@ final class AnimatedTextView: UIView {
         currentTracking = trackingStartValue
         currentOpacity = 0
         
-        // Position the view by setting its center, keeping the frame size wide enough to avoid clipping
         center = position
     }
     
