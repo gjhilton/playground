@@ -15,11 +15,11 @@ struct ContentView: View {
         ZStack {
             if let userLoc = locationManager.location?.coordinate {
                 MapViewRepresentable(region: $region)
-                    .saturation(0) // grayscale map
+                    .saturation(0) // grayscale map only
                     .edgesIgnoringSafeArea(.all)
                 
                 GeometryReader { geo in
-                    // Red cross for pin
+                    // Red cross for pin location
                     Image(systemName: "xmark")
                         .resizable()
                         .frame(width: 20, height: 20)
@@ -33,7 +33,7 @@ struct ContentView: View {
                         .overlay(Circle().stroke(Color.white, lineWidth: 2))
                         .position(geo.convertCoordinateToPoint(userLoc, region: region))
                 }
-                .allowsHitTesting(false)
+                .allowsHitTesting(false) // pass touches through overlays
             } else {
                 VStack {
                     ProgressView()
@@ -53,26 +53,35 @@ struct ContentView: View {
     }
 }
 
-// MARK: - MKMapView Wrapper that updates region continuously
+// MARK: - MKMapView wrapper
 
 struct MapViewRepresentable: UIViewRepresentable {
     @Binding var region: MKCoordinateRegion
     
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
+        
         if #available(iOS 13.0, *) {
+            // Configure map to hide POIs but show streets
+            let config = MKStandardMapConfiguration(elevationStyle: .flat)
+            config.pointOfInterestFilter = .excludingAll
+            mapView.preferredConfiguration = config
+            
+            // Force light mode map style
             mapView.overrideUserInterfaceStyle = .light
         }
+        
         mapView.delegate = context.coordinator
         mapView.showsUserLocation = true
         mapView.isZoomEnabled = true
         mapView.isScrollEnabled = true
         mapView.setRegion(region, animated: false)
+        
         return mapView
     }
     
     func updateUIView(_ mapView: MKMapView, context: Context) {
-        // Only update if region changed significantly (to avoid feedback loops)
+        // Avoid updating region if roughly the same to prevent jitter
         if !mapView.region.center.isApproximatelyEqual(to: region.center) ||
             !mapView.region.span.isApproximatelyEqual(to: region.span) {
             mapView.setRegion(region, animated: true)
@@ -91,7 +100,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         }
         
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
-            // This is called continuously while user pans/zooms
+            // Called continuously during pan/zoom
             DispatchQueue.main.async {
                 self.parent.region = mapView.region
             }
@@ -99,7 +108,7 @@ struct MapViewRepresentable: UIViewRepresentable {
     }
 }
 
-// MARK: - Helpers
+// MARK: - Helper functions
 
 func regionCovering(coordinates: [CLLocationCoordinate2D]) -> MKCoordinateRegion {
     guard !coordinates.isEmpty else {
@@ -156,7 +165,7 @@ extension MKCoordinateSpan {
     }
 }
 
-// MARK: - Location manager
+// MARK: - Location Manager
 
 class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
