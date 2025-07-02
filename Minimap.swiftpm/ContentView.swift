@@ -193,14 +193,11 @@ struct MapView: UIViewRepresentable {
 struct PinView: View {
     var body: some View {
         ZStack {
-            Circle()
-                .fill(Color.red)
-                .frame(width: 30, height: 30)
-            Image(systemName: "mappin")
+            Image(systemName: "a.square.fill")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 20, height: 20)
-                .foregroundColor(.white)
+                .frame(width: 30, height: 30 )
+                .foregroundColor(.red)
         }
     }
 }
