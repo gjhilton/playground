@@ -6,30 +6,35 @@ import CoreLocation
 
 struct ContentView: View {
     @StateObject private var locationManager = LocationManager()
-    @State private var region = MKCoordinateRegion()
-    @State private var hasSetInitialRegion = false
+    @State private var region: MKCoordinateRegion?
     
     private let pinCoordinate = CLLocationCoordinate2D(latitude: 54.4885, longitude: -0.6152)
+    @State private var hasSetInitialRegion = false
     
     var body: some View {
         ZStack {
-            if let userLoc = locationManager.location?.coordinate {
-                MapView(region: $region)
-                    .saturation(0) // grayscale map
+            if let userLocation = locationManager.location?.coordinate,
+               let bindingRegion = Binding($region) {
+                
+                MapView(region: bindingRegion)
+                    .saturation(0)
                     .edgesIgnoringSafeArea(.all)
                 
-                MapOverlays(pinCoordinate: pinCoordinate, userCoordinate: userLoc, region: region)
+                if let region = region {
+                    MapOverlays(
+                        pinCoordinate: pinCoordinate,
+                        userCoordinate: userLocation,
+                        region: region
+                    )
                     .allowsHitTesting(false)
+                }
                 
                 VStack {
                     Spacer()
                     HStack {
                         Spacer()
-                        Button(action: {
-                            region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoordinate])
-                            hasSetInitialRegion = true
-                        }) {
-                            Label("Re-center", systemImage: "location.north.line")
+                        Button(action: updateRegion) {
+                            Text("Re-center")
                                 .padding(10)
                                 .background(Color.white.opacity(0.8))
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -37,16 +42,30 @@ struct ContentView: View {
                         .padding()
                     }
                 }
+                
             } else {
                 LoadingView()
             }
         }
         .onChange(of: locationManager.location) { _ in
-            if !hasSetInitialRegion, let userLoc = locationManager.location?.coordinate {
-                region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoordinate])
-                hasSetInitialRegion = true
-            }
+            updateRegionIfNeeded()
         }
+        .onAppear {
+            updateRegionIfNeeded()
+        }
+    }
+    
+    private func updateRegionIfNeeded() {
+        guard let userLoc = locationManager.location?.coordinate else { return }
+        if !hasSetInitialRegion {
+            region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoordinate])
+            hasSetInitialRegion = true
+        }
+    }
+    
+    private func updateRegion() {
+        guard let userLoc = locationManager.location?.coordinate else { return }
+        region = MKCoordinateRegion.regionCovering(coordinates: [userLoc, pinCoordinate])
     }
 }
 
@@ -110,11 +129,15 @@ struct MapOverlays: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                PinView()
-                    .position(geo.convertCoordinateToPoint(pinCoordinate, region: region))
+                if geo.isCoordinateVisible(pinCoordinate, in: region) {
+                    PinView()
+                        .position(geo.convertCoordinateToPoint(pinCoordinate, region: region))
+                }
                 
-                UserLocationView()
-                    .position(geo.convertCoordinateToPoint(userCoordinate, region: region))
+                if geo.isCoordinateVisible(userCoordinate, in: region) {
+                    UserLocationView()
+                        .position(geo.convertCoordinateToPoint(userCoordinate, region: region))
+                }
             }
         }
     }
@@ -178,6 +201,13 @@ extension GeometryProxy {
         let clampedY = min(max(0, y), 1)
         
         return CGPoint(x: clampedX * mapWidth, y: clampedY * mapHeight)
+    }
+    
+    func isCoordinateVisible(_ coordinate: CLLocationCoordinate2D, in region: MKCoordinateRegion) -> Bool {
+        let latRange = (region.center.latitude - region.span.latitudeDelta / 2)...(region.center.latitude + region.span.latitudeDelta / 2)
+        let lonRange = (region.center.longitude - region.span.longitudeDelta / 2)...(region.center.longitude + region.span.longitudeDelta / 2)
+        
+        return latRange.contains(coordinate.latitude) && lonRange.contains(coordinate.longitude)
     }
 }
 
