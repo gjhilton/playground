@@ -1,117 +1,132 @@
-
 import SwiftUI
-import CoreText
+import AVFoundation
 
-// UIView that draws Core Text attributed string
-class CoreTextUIView: UIView {
-    private let attrString: NSAttributedString
-    
-    init(attributedString: NSAttributedString) {
-        self.attrString = attributedString
-        let size = CoreTextUIView.measure(attrString: attrString)
-        super.init(frame: CGRect(origin: .zero, size: size))
-        backgroundColor = .clear
-        isOpaque = false
-    }
-    
-    required init?(coder: NSCoder) { fatalError() }
-    
-    static func measure(attrString: NSAttributedString) -> CGSize {
-        let framesetter = CTFramesetterCreateWithAttributedString(attrString)
-        let maxSize = CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        let size = CTFramesetterSuggestFrameSizeWithConstraints(framesetter, CFRangeMake(0, attrString.length), nil, maxSize, nil)
-        return CGSize(width: ceil(size.width), height: ceil(size.height))
-    }
-    
-    override func draw(_ rect: CGRect) {
-        guard let ctx = UIGraphicsGetCurrentContext() else { return }
-        ctx.clear(rect)
-        ctx.textMatrix = .identity
-        ctx.translateBy(x: 0, y: bounds.height)
-        ctx.scaleBy(x: 1, y: -1)
-        
-        let framesetter = CTFramesetterCreateWithAttributedString(attrString)
-        let path = CGPath(rect: bounds, transform: nil)
-        let frame = CTFramesetterCreateFrame(framesetter, CFRangeMake(0, attrString.length), path, nil)
-        CTFrameDraw(frame, ctx)
-    }
-}
+// MARK: - TextView
 
-// SwiftUI wrapper for CoreTextUIView
-struct AnimatedTextView: UIViewRepresentable {
-    let text: String
-    private let attributedString: NSAttributedString
-    let intrinsicSize: CGSize
+final class TextView: UIView {
+    private let text: String
+    private let fontSize: CGFloat
+    private let label: UILabel
     
-    init(text: String) {
+    init(text: String, fontSize: CGFloat, position: CGPoint) {
         self.text = text
-        self.attributedString = AnimatedTextView.makeAttributedString(from: text)
-        self.intrinsicSize = CoreTextUIView.measure(attrString: attributedString)
+        self.fontSize = fontSize
+        self.label = UILabel()
+        let height = fontSize * 2
+        let width: CGFloat = 300
+        super.init(frame: CGRect(x: 0, y: 0, width: width, height: height))
+        backgroundColor = .red
+        
+        label.text = text
+        label.font = UIFont.systemFont(ofSize: fontSize)
+        label.textAlignment = .center
+        label.frame = bounds
+        label.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(label)
+        
+        center = position
     }
     
-    func makeUIView(context: Context) -> CoreTextUIView {
-        CoreTextUIView(attributedString: attributedString)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
     
-    func updateUIView(_ uiView: CoreTextUIView, context: Context) {
-        // Immutable text — no updates needed
+    func play() {
+        AudioServicesPlaySystemSound(SystemSoundID(1104))
+    }
+    
+    func rewind() {
+        AudioServicesPlaySystemSound(SystemSoundID(1104))
     }
 }
 
-extension AnimatedTextView {
-    static func makeAttributedString(from string: String) -> NSAttributedString {
-        let font = CTFontCreateWithName("TimesNewRomanPSMT" as CFString, 36, nil)
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: UIColor.black
-        ]
-        return NSAttributedString(string: string, attributes: attributes)
+// MARK: - SplashscreenView
+
+final class SplashscreenView: UIView {
+    private let textView1: TextView
+    private let textView2: TextView
+    
+    override init(frame: CGRect) {
+        let xPos: CGFloat = 200
+        let yPos: CGFloat = 200
+        
+        textView1 = TextView(text: "Funeral Trousers", fontSize: 18, position: CGPoint(x: xPos, y: yPos))
+        textView2 = TextView(text: "presents", fontSize: 14, position: CGPoint(x: xPos, y: yPos + 30))
+        
+        super.init(frame: frame)
+        backgroundColor = .white
+        
+        addSubview(textView1)
+        addSubview(textView2)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    func play() {
+        textView1.play()
+        textView2.play()
+    }
+    
+    func rewind() {
+        textView1.rewind()
+        textView2.rewind()
     }
 }
 
-// Splash screen with AnimatedTextView and animation buttons
-struct SplashScreenView: View {
-    @State private var textPosition = CGPoint(x: 100, y: 100)
-    @State private var opacity: Double = 0
+// MARK: - SplashscreenViewRepresentable
+
+struct SplashscreenViewRepresentable: UIViewRepresentable {
+    let splashscreenView = SplashscreenView()
     
-    private let animatedText = AnimatedTextView(text: "Funeral Trousers")
+    func makeUIView(context: Context) -> SplashscreenView {
+        splashscreenView
+    }
     
-    var body: some View {
-        ZStack {
-            Color.white.ignoresSafeArea()
-            
-            animatedText
-                .frame(width: animatedText.intrinsicSize.width, height: animatedText.intrinsicSize.height)
-                .position(textPosition)
-                .opacity(opacity)
-            
-            VStack {
-                Spacer()
-                HStack(spacing: 20) {
-                    Button("Animate Opacity") {
-                        opacity = 0
-                        withAnimation(.linear(duration: 1)) {
-                            opacity = 1
-                        }
-                    }
-                    Button("Reset") {
-                        withAnimation(nil) {
-                            opacity = 0
-                        }
-                    }
-                }
-                .padding()
-            }
-        }
+    func updateUIView(_ uiView: SplashscreenView, context: Context) {}
+    
+    func play() {
+        splashscreenView.play()
+    }
+    
+    func rewind() {
+        splashscreenView.rewind()
     }
 }
+
+// MARK: - ContentView
 
 struct ContentView: View {
+    @State private var isPlaying = false
+    private let splashscreen = SplashscreenViewRepresentable()
+    
     var body: some View {
-        SplashScreenView()
+        VStack {
+            splashscreen
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            
+            Spacer()
+            
+            HStack(spacing: 40) {
+                Button("Play") {
+                    splashscreen.play()
+                    isPlaying = true
+                }
+                .disabled(isPlaying)
+                
+                Button("Rewind") {
+                    splashscreen.rewind()
+                    isPlaying = false
+                }
+                .disabled(!isPlaying)
+            }
+            .padding(.bottom, 30)
+        }
+        .padding(.horizontal, 20)
     }
 }
 
-#Preview {
-    ContentView()
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View { ContentView() }
 }
