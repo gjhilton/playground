@@ -65,3 +65,7 @@ fastlane/test_output
 /My App.swiftpm/.swiftpm/playgrounds/**
 /Animate.swiftpm/.swiftpm/playgrounds/**
 /My App 2.swiftpm/.swiftpm/playgrounds/**
+/Blend.swiftpm/.swiftpm/playgrounds/**
+/Splashscreen.swiftpm/.swiftpm/playgrounds/**
+/BlendDifference.swiftpm/.swiftpm/playgrounds/**
+/SequencedSplashscreen.swiftpm/.swiftpm/playgrounds/**
