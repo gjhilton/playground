@@ -5,6 +5,16 @@ import QuartzCore
 
 class StripeImageViewModel: ObservableObject {
     @Published var generatedImage: CGImage?
+    @Published var videoSize: CGSize = .zero
+    
+    func loadVideoAndGenerateImage(url: URL) {
+        let asset = AVAsset(url: url)
+        let track = asset.tracks(withMediaType: .video).first
+        let size = track?.naturalSize ?? CGSize.zero
+        self.videoSize = size
+        
+        generateStripeImage(frame: CGRect(origin: .zero, size: size))
+    }
     
     func generateStripeImage(frame: CGRect) {
         let size = frame.size
@@ -53,11 +63,13 @@ struct ContentView: View {
     
     var body: some View {
         ZStack {
-            ScrollView(.horizontal) {
-                StripeImageViewRepresentable(viewModel: viewModel)
-                    .frame(width: 300, height: 170)
+            if viewModel.generatedImage != nil {
+                ScrollView(.horizontal) {
+                    StripeImageViewRepresentable(viewModel: viewModel)
+                        .frame(width: 300, height: 170)
+                }
+                .frame(height: 170)
             }
-            .frame(height: 170)
             
             VStack {
                 Spacer()
@@ -77,7 +89,11 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            viewModel.generateStripeImage(frame: CGRect(x: 0, y: 0, width: 3000, height: 1700))
+            if let url = Bundle.main.url(forResource: "example", withExtension: "MP4") {  // Correct case: MP4
+                viewModel.loadVideoAndGenerateImage(url: url)
+            } else {
+                print("Video not found!")
+            }
         }
     }
 }
@@ -86,7 +102,7 @@ struct StripeImageViewRepresentable: UIViewRepresentable {
     @ObservedObject var viewModel: StripeImageViewModel
     
     func makeUIView(context: Context) -> UIView {
-        return StripeImageView(viewModel: viewModel, frame: CGRect(x: 0, y: 0, width: 3000, height: 1700))
+        return StripeImageView(viewModel: viewModel, frame: CGRect(x: 0, y: 0, width: viewModel.videoSize.width, height: viewModel.videoSize.height))
     }
     
     func updateUIView(_ uiView: UIView, context: Context) {
@@ -109,16 +125,14 @@ class StripeImageView: UIView {
         self.backgroundColor = .white
         
         imageLayer = CALayer()
-        imageLayer.frame = CGRect(x: 0, y: 0, width: 3000, height: 1700)
+        imageLayer.frame = CGRect(x: 0, y: 0, width: viewModel.videoSize.width, height: viewModel.videoSize.height)
         self.layer.addSublayer(imageLayer)
         
         videoLayer = AVPlayerLayer()
-        videoLayer.frame = CGRect(x: 0, y: 0, width: 3000, height: 1700)
+        videoLayer.frame = CGRect(x: 0, y: 0, width: viewModel.videoSize.width, height: viewModel.videoSize.height)
         self.layer.addSublayer(videoLayer)
         
-        viewModel.generateStripeImage(frame: frame)
-        
-        loadAndPlayVideo()
+        loadAndPlayVideo(url: Bundle.main.url(forResource: "example", withExtension: "MP4")!)  // Correct case: MP4
     }
     
     required init?(coder: NSCoder) {
@@ -140,12 +154,7 @@ class StripeImageView: UIView {
         return context!.makeImage()!
     }
     
-    private func loadAndPlayVideo() {
-        guard let url = Bundle.main.url(forResource: "example", withExtension: "MP4") else {
-            print("Video not found!")
-            return
-        }
-        
+    private func loadAndPlayVideo(url: URL) {
         let asset = AVAsset(url: url)
         let track = asset.tracks(withMediaType: .video).first
         let size = track?.naturalSize ?? CGSize.zero
