@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import AVFoundation
 import QuartzCore
 
 class StripeImageViewModel: ObservableObject {
@@ -98,8 +99,8 @@ struct StripeImageViewRepresentable: UIViewRepresentable {
 class StripeImageView: UIView {
     
     @ObservedObject var viewModel: StripeImageViewModel
-    
     private var imageLayer: CALayer!
+    private var videoLayer: AVPlayerLayer!
     
     init(viewModel: StripeImageViewModel, frame: CGRect) {
         self.viewModel = viewModel
@@ -111,7 +112,13 @@ class StripeImageView: UIView {
         imageLayer.frame = CGRect(x: 0, y: 0, width: 3000, height: 1700)
         self.layer.addSublayer(imageLayer)
         
+        videoLayer = AVPlayerLayer()
+        videoLayer.frame = CGRect(x: 0, y: 0, width: 3000, height: 1700)
+        self.layer.addSublayer(videoLayer)
+        
         viewModel.generateStripeImage(frame: frame)
+        
+        loadAndPlayVideo()
     }
     
     required init?(coder: NSCoder) {
@@ -131,5 +138,21 @@ class StripeImageView: UIView {
         let context = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: image.bitsPerComponent, bytesPerRow: 0, space: image.colorSpace!, bitmapInfo: image.bitmapInfo.rawValue)
         context?.draw(image, in: CGRect(origin: .zero, size: size))
         return context!.makeImage()!
+    }
+    
+    private func loadAndPlayVideo() {
+        guard let url = Bundle.main.url(forResource: "example", withExtension: "MP4") else {
+            print("Video not found!")
+            return
+        }
+        
+        let asset = AVAsset(url: url)
+        let track = asset.tracks(withMediaType: .video).first
+        let size = track?.naturalSize ?? CGSize.zero
+        print("Video size: \(size.width) x \(size.height)")
+        
+        let player = AVPlayer(url: url)
+        videoLayer.player = player
+        player.play()
     }
 }
