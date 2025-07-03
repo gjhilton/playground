@@ -1,7 +1,9 @@
 import SwiftUI
 import AVKit
 import AVFoundation
+import CoreImage
 
+// Custom Video Player UIView
 class VideoPlayerUIView: UIView {
     var playerLayer: AVPlayerLayer!
     var player: AVPlayer!
@@ -16,17 +18,15 @@ class VideoPlayerUIView: UIView {
         self.playerLayer = AVPlayerLayer(player: player)
         self.layer.addSublayer(playerLayer)
         
-        // Create AVPlayerItemVideoOutput
+        // Create AVPlayerItemVideoOutput to capture video frames
         self.videoOutput = AVPlayerItemVideoOutput(pixelBufferAttributes: [
             (kCVPixelBufferPixelFormatTypeKey as String): kCVPixelFormatType_32BGRA
         ])
         self.player.currentItem?.add(self.videoOutput)
         
-        // Display layer for processed video
+        // Create a display layer for rendering processed frames
         self.displayLayer = CALayer()
         self.layer.addSublayer(displayLayer)
-        
-        self.playerLayer.videoGravity = .resizeAspectFill
     }
     
     required init?(coder: NSCoder) {
@@ -35,73 +35,77 @@ class VideoPlayerUIView: UIView {
     
     override func layoutSubviews() {
         super.layoutSubviews()
-        // Ensure the player layer and display layer adjust to the size of the view
+        // Ensure the player and display layers adjust to the view size
         playerLayer.frame = bounds
         displayLayer.frame = bounds
     }
     
-    func zoomAndCropVideo() {
-        // Capture pixel buffer from the AVPlayerItemVideoOutput
+    // Function to extract video frames and process them
+    func processPixelBuffer() {
+        // Capture the current video frame as a pixel buffer
         guard let currentPixelBuffer = videoOutput.copyPixelBuffer(forItemTime: player.currentTime(), itemTimeForDisplay: nil) else {
             print("Failed to capture pixel buffer")
             return
         }
         
-        // Process the pixel buffer (apply zoom and crop)
-        processPixelBuffer(currentPixelBuffer)
+        // Process and transform the pixel buffer (zoom, crop, and apply color transformation)
+        processAndRenderPixelBuffer(currentPixelBuffer)
     }
     
-    func processPixelBuffer(_ pixelBuffer: CVPixelBuffer) {
-        // Get the video asset size (size of the original video)
+    // Function to apply transformation (zoom, crop) and set all pixels to red
+    func processAndRenderPixelBuffer(_ pixelBuffer: CVPixelBuffer) {
+        // Get the video size and screen size
         guard let asset = player.currentItem?.asset else { return }
         let videoSize = asset.tracks(withMediaType: .video).first?.naturalSize ?? CGSize(width: 1, height: 1)
-        
         let screenHeight = bounds.height
         let screenWidth = bounds.width
         
-        // Calculate scale factor to fit the video height
+        // Calculate the scale factor to fit the video height
         let scaleFactor = screenHeight / videoSize.height
         
-        // Apply scaling transformation to the video
+        // Apply scaling transformation to fill the screen height
         let scaledWidth = videoSize.width * scaleFactor
         
-        // Calculate the excess width (this will be cropped from the right)
+        // Calculate the excess width (this is the part we crop)
         let excessWidth = scaledWidth - screenWidth
-        
-        // Set translation to crop the excess width from the right (focus on left side)
-        let translationX = -excessWidth  // Translate to the left, crop from the right
+        let translationX = -excessWidth  // Translate left to show the leftmost part
         
         // Create a CIImage from the pixel buffer
-        let context = CIContext()
         let image = CIImage(cvPixelBuffer: pixelBuffer)
         
-        // Apply scaling and translation transformations to the image
+        // Apply the transformation (zoom and crop)
         let transform = CGAffineTransform(translationX: translationX, y: 0).scaledBy(x: scaleFactor, y: scaleFactor)
         let transformedImage = image.transformed(by: transform)
         
-        // Create a new pixel buffer with the transformed image
+        // Convert the transformed image to a red image (set all pixels to red)
+        let redImage = transformedImage.applyingFilter("CIConstantColorGenerator", parameters: ["inputColor": CIColor(red: 1.0, green: 0.0, blue: 0.0)])
+        
+        // Create a new pixel buffer to render the transformed red image
         var outputPixelBuffer: CVPixelBuffer?
         let pixelBufferAttributes: [String: Any] = [
             kCVPixelBufferCGImageCompatibilityKey as String: true,
             kCVPixelBufferCGBitmapContextCompatibilityKey as String: true
         ]
         
-        // Allocate a pixel buffer with a non-optional pointer
         let status = CVPixelBufferCreate(nil, Int(screenWidth), Int(screenHeight), kCVPixelFormatType_32BGRA, pixelBufferAttributes as CFDictionary, &outputPixelBuffer)
         
         if status != kCVReturnSuccess || outputPixelBuffer == nil {
-            print("Failed to create pixel buffer")
+            print("Failed to create output pixel buffer")
             return
         }
         
-        // Render the transformed image to the output pixel buffer
-        context.render(transformedImage, to: outputPixelBuffer!)
+        // Render the red image into the new pixel buffer
+        let context = CIContext()
+        context.render(redImage, to: outputPixelBuffer!)
         
-        // Display the processed pixel buffer in the custom display layer
-        displayLayer.contents = outputPixelBuffer
+        // Set the output pixel buffer to the display layer
+        DispatchQueue.main.async {
+            self.displayLayer.contents = outputPixelBuffer
+        }
     }
 }
 
+// SwiftUI View to display the video
 struct VideoPlayerView: View {
     private let player: AVPlayer
     private let playerUIView: VideoPlayerUIView
@@ -114,23 +118,23 @@ struct VideoPlayerView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Custom view to display the video
                 PlayerUIViewWrapper(playerUIView: playerUIView)
                     .onAppear {
                         // Auto-play the video when the view appears
                         player.play()
                     }
                     .onChange(of: player.currentTime()) { _ in
-                        // Apply zoom and crop as the video plays
-                        playerUIView.zoomAndCropVideo()
+                        // Process and render the video frames
+                        playerUIView.processPixelBuffer()
                     }
-                    .frame(width: geometry.size.width, height: geometry.size.height) // Full screen
+                    .frame(width: geometry.size.width, height: geometry.size.height)
             }
         }
         .edgesIgnoringSafeArea(.all) // Allow the video to go under system UI
     }
 }
 
+// Wrap the custom UIView inside a SwiftUI view
 struct PlayerUIViewWrapper: UIViewRepresentable {
     let playerUIView: VideoPlayerUIView
     
@@ -139,10 +143,11 @@ struct PlayerUIViewWrapper: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: VideoPlayerUIView, context: Context) {
-        // Update the player view when necessary
+        // Update the player view if necessary
     }
 }
 
+// Main Content View
 struct ContentView: View {
     var body: some View {
         VStack {
