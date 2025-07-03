@@ -1,39 +1,12 @@
 import SwiftUI
 import UIKit
 
-struct ContentView: View {
-    var body: some View {
-        StripeImageViewRepresentable()
-            .frame(width: 4000, height: 1000)
-    }
-}
-
-struct StripeImageViewRepresentable: UIViewRepresentable {
-    func makeUIView(context: Context) -> UIView {
-        return StripeImageView(frame: CGRect(x: 0, y: 0, width: 4000, height: 1000))
-    }
+// ViewModel to manage image creation and saving
+class StripeImageViewModel: ObservableObject {
+    @Published var generatedImage: CGImage?
     
-    func updateUIView(_ uiView: UIView, context: Context) {
-        // No need to update for now, but you could trigger re-rendering of the stripes here.
-    }
-}
-
-class StripeImageView: UIView {
-    
-    var imageLayer: CALayer!
-    
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        self.backgroundColor = .white
-        generateStripeImage()
-    }
-    
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-    
-    func generateStripeImage() {
-        let size = self.bounds.size
+    func generateStripeImage(frame: CGRect) {
+        let size = frame.size
         
         // Create a context to draw the stripes in
         UIGraphicsBeginImageContextWithOptions(size, false, 0.0)
@@ -61,15 +34,93 @@ class StripeImageView: UIView {
         
         UIGraphicsEndImageContext()
         
-        // Create a CALayer to display the image
-        if imageLayer == nil {
-            imageLayer = CALayer()
-            imageLayer.frame = self.bounds
-            imageLayer.contentsGravity = .resizeAspectFill // Maintain aspect ratio
-            layer.addSublayer(imageLayer)
-        }
+        // Save the generated image for later use
+        generatedImage = cgImage
+    }
+    
+    // Function to save the image to the camera roll
+    func saveImageToCameraRoll() {
+        guard let generatedImage = generatedImage else { return }
         
-        // Set the image as the layer's contents
-        imageLayer.contents = cgImage
+        // Convert CGImage to UIImage
+        let image = UIImage(cgImage: generatedImage)
+        
+        // Save the image to the camera roll
+        UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+    }
+}
+
+struct ContentView: View {
+    @StateObject var viewModel = StripeImageViewModel()
+    
+    var body: some View {
+        ZStack {
+            // Scrollable image
+            ScrollView(.horizontal) {  // Horizontal scrolling for the image
+                StripeImageViewRepresentable(viewModel: viewModel)
+                    .frame(width: 4000, height: 1000)  // Keep the large size
+            }
+            .frame(height: 300) // Limit the visible height of the image
+            
+            // Button on top of the image
+            VStack {
+                Spacer()
+                Button(action: {
+                    // Action to save the image
+                    viewModel.saveImageToCameraRoll()
+                }) {
+                    Text("Save Image to Camera Roll")
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                        .shadow(radius: 5)
+                }
+                .padding()
+            }
+        }
+        .onAppear {
+            // Generate the stripe image when the view appears
+            viewModel.generateStripeImage(frame: CGRect(x: 0, y: 0, width: 4000, height: 1000))
+        }
+    }
+}
+
+struct StripeImageViewRepresentable: UIViewRepresentable {
+    @ObservedObject var viewModel: StripeImageViewModel
+    
+    func makeUIView(context: Context) -> UIView {
+        return StripeImageView(viewModel: viewModel, frame: CGRect(x: 0, y: 0, width: 4000, height: 1000))
+    }
+    
+    func updateUIView(_ uiView: UIView, context: Context) {
+        // No need to update for now
+    }
+}
+
+class StripeImageView: UIView {
+    
+    @ObservedObject var viewModel: StripeImageViewModel
+    
+    init(viewModel: StripeImageViewModel, frame: CGRect) {
+        self.viewModel = viewModel
+        super.init(frame: frame)
+        self.backgroundColor = .white
+        // Generate image once it's initialized
+        viewModel.generateStripeImage(frame: frame)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func draw(_ rect: CGRect) {
+        super.draw(rect)
+        
+        // Draw the image from the viewModel
+        if let generatedImage = viewModel.generatedImage {
+            let context = UIGraphicsGetCurrentContext()
+            context?.draw(generatedImage, in: rect)
+        }
     }
 }
