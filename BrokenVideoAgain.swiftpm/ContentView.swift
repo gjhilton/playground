@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import QuartzCore
 
 // ViewModel to manage image creation and saving
 class StripeImageViewModel: ObservableObject {
@@ -15,10 +16,19 @@ class StripeImageViewModel: ObservableObject {
         let stripeHeight: CGFloat = 50
         var xPosition: CGFloat = 0
         var isBlue = true
+        var isFirstStripe = true  // Flag to track the first stripe
         
         // Create alternating stripes
         while xPosition < size.width {
-            let color: UIColor = isBlue ? .blue : UIColor(red: 1.0, green: 0.41, blue: 0.71, alpha: 1.0)
+            let color: UIColor
+            
+            if isFirstStripe {
+                color = .green  // Make the first stripe green
+                isFirstStripe = false
+            } else {
+                color = isBlue ? .blue : UIColor(red: 1.0, green: 0.41, blue: 0.71, alpha: 1.0)
+            }
+            
             color.setFill()
             let rect = CGRect(x: xPosition, y: 0, width: stripeHeight, height: size.height)
             context.fill(rect)
@@ -102,10 +112,21 @@ class StripeImageView: UIView {
     
     @ObservedObject var viewModel: StripeImageViewModel
     
+    private var imageLayer: CALayer!
+    
     init(viewModel: StripeImageViewModel, frame: CGRect) {
         self.viewModel = viewModel
         super.init(frame: frame)
+        
         self.backgroundColor = .white
+        
+        // Create a CALayer to hold the image
+        imageLayer = CALayer()
+        imageLayer.frame = CGRect(x: 0, y: 0, width: 4000, height: 1000)
+        
+        // Add the layer to the view's layer
+        self.layer.addSublayer(imageLayer)
+        
         // Generate image once it's initialized
         viewModel.generateStripeImage(frame: frame)
     }
@@ -117,10 +138,9 @@ class StripeImageView: UIView {
     override func draw(_ rect: CGRect) {
         super.draw(rect)
         
-        // Draw the image from the viewModel
+        // Update the CALayer with the generated image
         if let generatedImage = viewModel.generatedImage {
-            let context = UIGraphicsGetCurrentContext()
-            context?.draw(generatedImage, in: rect)
+            imageLayer.contents = generatedImage
         }
     }
 }
