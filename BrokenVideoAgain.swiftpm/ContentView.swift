@@ -66,25 +66,6 @@ struct ContentView: View {
             if viewModel.generatedImage != nil {
                 ScrollView(.horizontal) {
                     StripeImageViewRepresentable(viewModel: viewModel)
-                        
-                }
-                
-            }
-            
-            VStack {
-                Spacer()
-                HStack {
-                    Button(action: {
-                        viewModel.saveImageToCameraRoll()
-                    }) {
-                        Text("Save Image to Camera Roll")
-                            .padding()
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
-                            .shadow(radius: 5)
-                    }
-                    .padding()
                 }
             }
         }
