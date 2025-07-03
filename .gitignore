@@ -70,3 +70,4 @@ fastlane/test_output
 /BlendDifference.swiftpm/.swiftpm/playgrounds/**
 /SequencedSplashscreen.swiftpm/.swiftpm/playgrounds/**
 /My App 2.swiftpm/Resources/example.MP4
+/My App 3.swiftpm/.swiftpm/playgrounds/**
