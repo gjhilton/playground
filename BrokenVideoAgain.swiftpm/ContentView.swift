@@ -66,9 +66,9 @@ struct ContentView: View {
             if viewModel.generatedImage != nil {
                 ScrollView(.horizontal) {
                     StripeImageViewRepresentable(viewModel: viewModel)
-                        .frame(width: 300, height: 170)
+                        
                 }
-                .frame(height: 170)
+                
             }
             
             VStack {
