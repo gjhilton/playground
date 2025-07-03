@@ -71,3 +71,7 @@ fastlane/test_output
 /SequencedSplashscreen.swiftpm/.swiftpm/playgrounds/**
 /My App 2.swiftpm/Resources/example.MP4
 /My App 3.swiftpm/.swiftpm/playgrounds/**
+/BrokenVideoAgain.swiftpm/.swiftpm/playgrounds/**
+/BrokenVideoAgain.swiftpm/Resources/example.MP4
+/Broken video.swiftpm/.swiftpm/playgrounds/**
+/Broken video.swiftpm/Resources/example.MP4
