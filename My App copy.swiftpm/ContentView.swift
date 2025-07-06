@@ -140,7 +140,7 @@ class MapOverlayView: UIView {
             
             // Draw the route line
             if points.count >= 2 {
-                ctx.setStrokeColor(UIColor.blue.cgColor)
+                ctx.setStrokeColor(UIColor.red.cgColor)
                 ctx.setLineWidth(8.0)
                 ctx.setLineCap(.round)
                 ctx.setLineJoin(.round)
@@ -419,6 +419,8 @@ struct ContentView: View {
         "Whitby station, Station Square, Whitby, North Yorkshire, YO21 1YN",
         "Whitby Museum, Pannett Park, Whitby, North Yorkshire, YO21 1RE",
         "6 Royal Crescent, Whitby, North Yorkshire, YO21 3EJ",
+        "40 Cliff St, Whitby, North Yorkshire, yo21 4dd",
+         "25 Flowergate, Whitby YO21 3BB",
         "Swing Bridge, Bridge St, Whitby YO22 4BG",
         "St Mary's church, Abbey Plain, Whitby YO22 4JR"
     ]
