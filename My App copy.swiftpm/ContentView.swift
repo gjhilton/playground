@@ -1,176 +1,290 @@
 
 import SwiftUI
-import UIKit
 import MapKit
 import CoreLocation
+import Combine // Added for Combine framework
 
-// Custom annotation for a tour stop
-class TourStopAnnotation: NSObject, MKAnnotation {
-    let coordinate: CLLocationCoordinate2D
-    init(coordinate: CLLocationCoordinate2D) {
-        self.coordinate = coordinate
-        super.init()
-    }
-}
+// MARK: - Models
 
-// Tour stop data structure
-struct TourStop {
-    let coordinate: CLLocationCoordinate2D
+struct TourLocation {
+    let address: String
+    let coordinate: CLLocationCoordinate2D?
     let title: String
-    let subtitle: String
-    let index: Int
+    
+    init(address: String, coordinate: CLLocationCoordinate2D? = nil, title: String = "") {
+        self.address = address
+        self.coordinate = coordinate
+        self.title = title
+    }
 }
 
-// Custom overlay for tour graphics
-class TourSymbolOverlay: NSObject, MKOverlay {
+struct TourRoute {
+    let startIndex: Int
+    let endIndex: Int
     let coordinates: [CLLocationCoordinate2D]
-    let symbolNames: [String]
-    var boundingMapRect: MKMapRect {
-        guard !coordinates.isEmpty else { return .null }
-        if coordinates.count == 1 {
-            // Use a very large rect around the point to cover the map
-            let center = MKMapPoint(coordinates[0])
-            let size: Double = 10000000 // very large, covers most of the map
-            return MKMapRect(x: center.x - size/2, y: center.y - size/2, width: size, height: size)
-        }
-        var minMapPoint = MKMapPoint(coordinates[0])
-        var maxMapPoint = minMapPoint
-        for coord in coordinates {
-            let point = MKMapPoint(coord)
-            minMapPoint.x = min(minMapPoint.x, point.x)
-            minMapPoint.y = min(minMapPoint.y, point.y)
-            maxMapPoint.x = max(maxMapPoint.x, point.x)
-            maxMapPoint.y = max(maxMapPoint.y, point.y)
-        }
-        return MKMapRect(
-            origin: MKMapPoint(x: minMapPoint.x, y: minMapPoint.y),
-            size: MKMapSize(width: maxMapPoint.x - minMapPoint.x, height: maxMapPoint.y - minMapPoint.y)
-        )
-    }
-    var coordinate: CLLocationCoordinate2D {
-        guard !coordinates.isEmpty else { return CLLocationCoordinate2D(latitude: 0, longitude: 0) }
-        let lat = coordinates.map { $0.latitude }.reduce(0, +) / Double(coordinates.count)
-        let lon = coordinates.map { $0.longitude }.reduce(0, +) / Double(coordinates.count)
-        return CLLocationCoordinate2D(latitude: lat, longitude: lon)
-    }
-    init(coordinates: [CLLocationCoordinate2D], symbolNames: [String]) {
-        self.coordinates = coordinates
-        self.symbolNames = symbolNames
-        super.init()
+    let distance: CLLocationDistance
+    let expectedTravelTime: TimeInterval
+    
+    var geoJSON: [String: Any] {
+        let coordinates = self.coordinates.map { [$0.longitude, $0.latitude] }
+        return [
+            "type": "Feature",
+            "geometry": [
+                "type": "LineString",
+                "coordinates": coordinates
+            ],
+            "properties": [
+                "distance": distance,
+                "expectedTravelTime": expectedTravelTime,
+                "startIndex": startIndex,
+                "endIndex": endIndex
+            ]
+        ]
     }
 }
 
-class TourSymbolOverlayRenderer: MKOverlayRenderer {
-    let symbolSize: CGFloat = 30
-    var animatedZoomScale: CGFloat = 1.0
-    private var displayLink: CADisplayLink?
-    private var animationStartTime: CFTimeInterval = 0
-    private var animationDuration: CFTimeInterval = 0.2
-    private var startZoomScale: CGFloat = 1.0
-    private var targetZoomScale: CGFloat = 1.0
+// MARK: - Services
+
+protocol TourServiceProtocol {
+    func geocodeLocations(_ addresses: [String], completion: @escaping ([TourLocation]) -> Void)
+    func getWalkingDirections(between locations: [TourLocation], completion: @escaping ([TourRoute]) -> Void)
+}
+
+class TourService: TourServiceProtocol {
+    private let geocoder = CLGeocoder()
+    private let directionsQueue = DispatchQueue(label: "com.tour.directions", qos: .userInitiated)
     
-    func animateZoom(from: CGFloat, to: CGFloat) {
-        displayLink?.invalidate()
-        startZoomScale = from
-        targetZoomScale = to
-        animationStartTime = CACurrentMediaTime()
-        animatedZoomScale = from
-        displayLink = CADisplayLink(target: self, selector: #selector(updateAnimation))
-        displayLink?.add(to: .main, forMode: .common)
+    func geocodeLocations(_ addresses: [String], completion: @escaping ([TourLocation]) -> Void) {
+        var geocodedLocations: [TourLocation] = []
+        func geocodeNext(index: Int) {
+            guard index < addresses.count else {
+                completion(geocodedLocations)
+                return
+            }
+            let address = addresses[index]
+            geocoder.geocodeAddressString(address) { placemarks, error in
+                let location: TourLocation
+                if let placemark = placemarks?.first, let coordinate = placemark.location?.coordinate {
+                    location = TourLocation(
+                        address: address,
+                        coordinate: coordinate,
+                        title: placemark.name ?? address
+                    )
+                } else {
+                    location = TourLocation(address: address, coordinate: nil)
+                }
+                // Print geocode result with timestamp
+                let formatter = DateFormatter()
+                formatter.dateFormat = "HH:mm:ss.SSS"
+                let timestamp = formatter.string(from: Date())
+                print("[\(timestamp)] Geocoded: \(address) => \(String(describing: location.coordinate))")
+                DispatchQueue.main.async {
+                    geocodedLocations.append(location)
+                    geocodeNext(index: index + 1)
+                }
+            }
+        }
+        geocodeNext(index: 0)
     }
     
-    @objc private func updateAnimation() {
-        let elapsed = CACurrentMediaTime() - animationStartTime
-        let t = min(CGFloat(elapsed / animationDuration), 1.0)
-        animatedZoomScale = startZoomScale + (targetZoomScale - startZoomScale) * t
-        setNeedsDisplay()
-        if t >= 1.0 {
-            displayLink?.invalidate()
-            displayLink = nil
+    func getWalkingDirections(between locations: [TourLocation], completion: @escaping ([TourRoute]) -> Void) {
+        guard locations.count >= 2 else {
+            completion([])
+            return
+        }
+        
+        var routes: [TourRoute] = []
+        let group = DispatchGroup()
+        
+        for i in 0..<(locations.count - 1) {
+            guard let startCoord = locations[i].coordinate,
+                  let endCoord = locations[i + 1].coordinate else { continue }
+            
+            group.enter()
+            getDirections(from: startCoord, to: endCoord, startIndex: i, endIndex: i + 1) { route in
+                if let route = route {
+                    routes.append(route)
+                }
+                group.leave()
+            }
+        }
+        
+        group.notify(queue: .main) {
+            completion(routes.sorted { $0.startIndex < $1.startIndex })
         }
     }
     
-    override func canDraw(_ mapRect: MKMapRect, zoomScale: MKZoomScale) -> Bool {
-        return true
-    }
-    override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
-        guard let overlay = overlay as? TourSymbolOverlay else { return }
-        for (i, coord) in overlay.coordinates.enumerated() {
-            let mapPoint = MKMapPoint(coord)
-            let point = self.point(for: mapPoint)
-            // Animate symbol size using animatedZoomScale
-            let mapCircleSize = symbolSize / animatedZoomScale
-            let circleRect = CGRect(x: point.x - mapCircleSize/2, y: point.y - mapCircleSize/2, width: mapCircleSize, height: mapCircleSize)
-            context.setStrokeColor(UIColor.blue.cgColor)
-            context.setLineWidth(8 / animatedZoomScale)
-            context.strokeEllipse(in: circleRect)
+    private func getDirections(from start: CLLocationCoordinate2D, 
+                               to end: CLLocationCoordinate2D, 
+                               startIndex: Int, 
+                               endIndex: Int, 
+                               completion: @escaping (TourRoute?) -> Void) {
+        
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: start))
+        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: end))
+        request.transportType = .walking
+        
+        let directions = MKDirections(request: request)
+        directions.calculate { response, error in
+            guard let route = response?.routes.first else {
+                completion(nil)
+                return
+            }
+            
+            let coordinates = self.extractCoordinates(from: route)
+            let tourRoute = TourRoute(
+                startIndex: startIndex,
+                endIndex: endIndex,
+                coordinates: coordinates,
+                distance: route.distance,
+                expectedTravelTime: route.expectedTravelTime
+            )
+            
+            completion(tourRoute)
         }
+    }
+    
+    private func extractCoordinates(from route: MKRoute) -> [CLLocationCoordinate2D] {
+        var coordinates: [CLLocationCoordinate2D] = []
+        
+        for step in route.steps {
+            let polyline = step.polyline
+            var points = [CLLocationCoordinate2D](repeating: CLLocationCoordinate2D(), count: polyline.pointCount)
+            polyline.getCoordinates(&points, range: NSRange(location: 0, length: polyline.pointCount))
+            coordinates.append(contentsOf: points)
+        }
+        
+        return coordinates
     }
 }
 
-// Custom overlay UIView for screen-space graphics
+// MARK: - View Models
+
+class TourViewModel: ObservableObject {
+    @Published var locations: [TourLocation] = []
+    @Published var routes: [TourRoute] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    @Published var isGeocoding = false
+    
+    private let tourService: TourServiceProtocol
+    
+    init(tourService: TourServiceProtocol = TourService()) {
+        self.tourService = tourService
+    }
+    
+    func loadTour(addresses: [String]) {
+        isLoading = true
+        isGeocoding = true
+        errorMessage = nil
+        
+        tourService.geocodeLocations(addresses) { [weak self] locations in
+            self?.locations = locations // Do not filter here
+            self?.isGeocoding = false
+            
+            self?.tourService.getWalkingDirections(between: locations.filter { $0.coordinate != nil }) { routes in
+                DispatchQueue.main.async {
+                    self?.routes = routes
+                    self?.isLoading = false
+                }
+            }
+        }
+    }
+    
+    var hasValidData: Bool {
+        return !locations.isEmpty && locations.allSatisfy { $0.coordinate != nil }
+    }
+}
+
+// MARK: - Views
+
 class MapOverlayView: UIView {
-    var mapView: MKMapView?
-    var coordinates: [CLLocationCoordinate2D] = []
-    var routeGeoJSON: [[String: Any]] = [] // Store GeoJSON route data
+    private var mapView: MKMapView?
+    private var locations: [TourLocation] = []
+    private var routes: [TourRoute] = []
+    
+    // MARK: - Configuration
+    
+    struct Configuration {
+        let markerSize: CGFloat = 30
+        let routeLineWidth: CGFloat = 6
+        let markerColor = UIColor(red: 0.8, green: 0.0, blue: 0.0, alpha: 1.0)
+        let routeColor = UIColor(red: 0.8, green: 0.0, blue: 0.0, alpha: 1.0)
+        let textColor = UIColor.white
+        let font = UIFont.systemFont(ofSize: 18, weight: .bold)
+    }
+    
+    private let config = Configuration()
+    
+    // MARK: - Public Interface
+    
+    func configure(mapView: MKMapView) {
+        self.mapView = mapView
+        backgroundColor = .clear
+        isUserInteractionEnabled = false
+    }
+    
+    func updateData(locations: [TourLocation], routes: [TourRoute]) {
+        self.locations = locations
+        self.routes = routes
+        setNeedsDisplay()
+    }
+    
+    // MARK: - Drawing
     
     override func draw(_ rect: CGRect) {
-        guard let mapView = mapView else { return }
-        guard let ctx = UIGraphicsGetCurrentContext() else { return }
+        guard let mapView = mapView,
+              let ctx = UIGraphicsGetCurrentContext() else { return }
         
-        // Draw routes first (behind markers)
         drawRoutes(ctx: ctx, mapView: mapView)
-        
-        // Draw location markers
         drawMarkers(ctx: ctx, mapView: mapView)
     }
     
     private func drawRoutes(ctx: CGContext, mapView: MKMapView) {
-        for route in routeGeoJSON {
-            guard let geometry = route["geometry"] as? [String: Any],
-                  let coordinates = geometry["coordinates"] as? [[Double]] else { continue }
-            
-            // Convert GeoJSON coordinates to screen points
-            var points: [CGPoint] = []
-            for coord in coordinates {
-                let coordinate = CLLocationCoordinate2D(latitude: coord[1], longitude: coord[0])
-                let point = mapView.convert(coordinate, toPointTo: self)
-                points.append(point)
+        for route in routes {
+            let points = route.coordinates.compactMap { coordinate in
+                mapView.convert(coordinate, toPointTo: self)
             }
             
-            // Draw the route line
-            if points.count >= 2 {
-                ctx.setStrokeColor(UIColor.red.cgColor)
-                ctx.setLineWidth(8.0)
-                ctx.setLineCap(.round)
-                ctx.setLineJoin(.round)
-                
-                ctx.move(to: points[0])
-                for i in 1..<points.count {
-                    ctx.addLine(to: points[i])
-                }
-                ctx.strokePath()
+            guard points.count >= 2 else { continue }
+            
+            ctx.setStrokeColor(config.routeColor.cgColor)
+            ctx.setLineWidth(config.routeLineWidth)
+            ctx.setLineCap(.round)
+            ctx.setLineJoin(.round)
+            
+            ctx.move(to: points[0])
+            for point in points.dropFirst() {
+                ctx.addLine(to: point)
             }
+            ctx.strokePath()
         }
     }
     
     private func drawMarkers(ctx: CGContext, mapView: MKMapView) {
-        let circleSize: CGFloat = 30
-        for (i, coord) in coordinates.enumerated() {
-            let point = mapView.convert(coord, toPointTo: self)
-            let letter = String(UnicodeScalar(65 + i)!) // 65 = 'A' (uppercase)
-            let rect = CGRect(x: point.x - circleSize/2, y: point.y - circleSize/2, width: circleSize, height: circleSize)
-            print("Drawing letter: \(letter) at \(rect)")
+        for (index, location) in locations.enumerated() {
+            guard let coordinate = location.coordinate else { continue }
             
-            // Draw a blood red square background
-            ctx.setFillColor(UIColor(red: 0.8, green: 0.0, blue: 0.0, alpha: 1.0).cgColor)
+            let point = mapView.convert(coordinate, toPointTo: self)
+            let letter = String(UnicodeScalar(65 + index)!) // A, B, C, D, E
+            let rect = CGRect(
+                x: point.x - config.markerSize/2,
+                y: point.y - config.markerSize/2,
+                width: config.markerSize,
+                height: config.markerSize
+            )
+            
+            // Draw marker background
+            ctx.setFillColor(config.markerColor.cgColor)
             ctx.fill(rect)
             
-            // Draw white bold capital letter text
+            // Draw letter
             let textAttributes: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: circleSize * 0.6, weight: .bold),
-                .foregroundColor: UIColor.white
+                .font: config.font,
+                .foregroundColor: config.textColor
             ]
+            
             let textSize = letter.size(withAttributes: textAttributes)
             let textRect = CGRect(
                 x: point.x - textSize.width/2,
@@ -178,23 +292,21 @@ class MapOverlayView: UIView {
                 width: textSize.width,
                 height: textSize.height
             )
+            
             letter.draw(in: textRect, withAttributes: textAttributes)
         }
     }
 }
 
-// UIKit TourView
-class TourView: UIViewController, MKMapViewDelegate {
-    
+class TourViewController: UIViewController {
     private let mapView = MKMapView()
-    private let addresses: [String]
-    private let geocoder = CLGeocoder()
-    private var overlayView: MapOverlayView?
-    private var geocodedCoords: [CLLocationCoordinate2D] = []
-    private var routeGeoJSON: [[String: Any]] = [] // Store GeoJSON route data
+    private let overlayView = MapOverlayView()
+    private let viewModel: TourViewModel
+    private var hasInitialZoom = false
+    private var spinner: UIActivityIndicatorView?
     
-    init(addresses: [String]) {
-        self.addresses = addresses
+    init(viewModel: TourViewModel) {
+        self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
     }
     
@@ -206,31 +318,40 @@ class TourView: UIViewController, MKMapViewDelegate {
         super.viewDidLoad()
         setupMapView()
         setupOverlayView()
-        geocodeAddresses()
+        setupSpinner()
+        setupBindings()
+    }
+    
+    private func setupSpinner() {
+        let spinner = UIActivityIndicatorView(style: .large)
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        spinner.hidesWhenStopped = true
+        view.addSubview(spinner)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ])
+        self.spinner = spinner
     }
     
     private func setupMapView() {
         view.backgroundColor = .white
         mapView.delegate = self
         mapView.translatesAutoresizingMaskIntoConstraints = false
+        
         // Configure map appearance
         mapView.mapType = .standard
-#if targetEnvironment(macCatalyst)
-        if #available(macCatalyst 13.1, *) {
-            mapView.pointOfInterestFilter = .excludingAll
-        }
-#else
         mapView.showsPointsOfInterest = false
-#endif
         mapView.showsBuildings = false
         mapView.showsTraffic = false
         mapView.showsScale = false
         mapView.showsCompass = false
         mapView.showsUserLocation = false
-        // Force light mode
+        
         if #available(iOS 13.0, *) {
             mapView.overrideUserInterfaceStyle = .light
         }
+        
         view.addSubview(mapView)
         NSLayoutConstraint.activate([
             mapView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
@@ -241,132 +362,73 @@ class TourView: UIViewController, MKMapViewDelegate {
     }
     
     private func setupOverlayView() {
-        let overlay = MapOverlayView(frame: .zero)
-        overlay.backgroundColor = .clear
-        overlay.isUserInteractionEnabled = false
-        overlay.mapView = mapView
-        overlay.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(overlay)
+        overlayView.configure(mapView: mapView)
+        overlayView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(overlayView)
+        
         NSLayoutConstraint.activate([
-            overlay.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            overlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            overlayView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            overlayView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            overlayView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            overlayView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
-        self.overlayView = overlay
     }
     
-    private func geocodeAddresses() {
-        geocodedCoords = []
-        func geocodeNext(index: Int) {
-            guard index < addresses.count else { 
-                // Geocoding complete, now get directions
-                getWalkingDirections()
-                return 
-            }
-            let address = addresses[index]
-            geocoder.geocodeAddressString(address) { [weak self] placemarks, error in
-                DispatchQueue.main.async {
-                    guard let self = self else { return }
-                    if let placemark = placemarks?.first, let location = placemark.location {
-                        self.geocodedCoords.append(location.coordinate)
-                        self.overlayView?.coordinates = self.geocodedCoords
-                        self.overlayView?.setNeedsDisplay()
-                        self.fitTourStopsInView(tourStops: self.geocodedCoords.map { TourStop(coordinate: $0, title: "", subtitle: "", index: 0) })
+    private func setupBindings() {
+        viewModel.$isGeocoding
+            .sink { [weak self] isGeocoding in
+                guard let self = self else { return }
+                if isGeocoding {
+                    self.spinner?.startAnimating()
+                    self.mapView.isHidden = true
+                    self.overlayView.isHidden = true
+                } else {
+                    self.spinner?.stopAnimating()
+                    self.mapView.isHidden = false
+                    self.overlayView.isHidden = false
+                    // Only fit map once when geocoding is done and we have valid locations
+                    let allValid = !self.viewModel.locations.isEmpty && self.viewModel.locations.allSatisfy { $0.coordinate != nil }
+                    if allValid && !self.hasInitialZoom {
+                        self.hasInitialZoom = true
+                        self.fitMapToLocations(self.viewModel.locations)
                     }
-                    geocodeNext(index: index + 1)
                 }
             }
-        }
-        geocodeNext(index: 0)
+            .store(in: &cancellables)
+        
+        viewModel.$locations
+            .sink { [weak self] locations in
+                guard let self = self else { return }
+                self.overlayView.updateData(locations: locations, routes: self.viewModel.routes)
+            }
+            .store(in: &cancellables)
+        
+        viewModel.$routes
+            .sink { [weak self] routes in
+                guard let self = self else { return }
+                self.overlayView.updateData(locations: self.viewModel.locations, routes: routes)
+            }
+            .store(in: &cancellables)
     }
     
-    private func getWalkingDirections() {
-        guard geocodedCoords.count >= 2 else { return }
+    private func fitMapToLocations(_ locations: [TourLocation]) {
+        guard !locations.isEmpty else { return }
         
-        func getDirectionsForSegment(index: Int) {
-            guard index < geocodedCoords.count - 1 else { 
-                // All directions complete, update overlay
-                overlayView?.routeGeoJSON = routeGeoJSON
-                overlayView?.setNeedsDisplay()
-                return 
-            }
-            
-            let startCoord = geocodedCoords[index]
-            let endCoord = geocodedCoords[index + 1]
-            
-            let request = MKDirections.Request()
-            request.source = MKMapItem(placemark: MKPlacemark(coordinate: startCoord))
-            request.destination = MKMapItem(placemark: MKPlacemark(coordinate: endCoord))
-            request.transportType = .walking
-            
-            let directions = MKDirections(request: request)
-            directions.calculate { [weak self] response, error in
-                DispatchQueue.main.async {
-                    guard let self = self else { return }
-                    if let route = response?.routes.first {
-                        // Convert route to GeoJSON format
-                        let geoJSON = self.routeToGeoJSON(route)
-                        self.routeGeoJSON.append(geoJSON)
-                        print("Got directions for segment \(index + 1): \(route.distance)m")
-                    }
-                    getDirectionsForSegment(index: index + 1)
-                }
-            }
+        let coordinates = locations.compactMap { $0.coordinate }
+        guard !coordinates.isEmpty else { return }
+        
+        var minLat = coordinates[0].latitude
+        var maxLat = coordinates[0].latitude
+        var minLon = coordinates[0].longitude
+        var maxLon = coordinates[0].longitude
+        
+        for coordinate in coordinates {
+            minLat = min(minLat, coordinate.latitude)
+            maxLat = max(maxLat, coordinate.latitude)
+            minLon = min(minLon, coordinate.longitude)
+            maxLon = max(maxLon, coordinate.longitude)
         }
         
-        getDirectionsForSegment(index: 0)
-    }
-    
-    private func routeToGeoJSON(_ route: MKRoute) -> [String: Any] {
-        var coordinates: [[Double]] = []
-        
-        for step in route.steps {
-            let polyline = step.polyline
-            var points = [CLLocationCoordinate2D](repeating: CLLocationCoordinate2D(), count: polyline.pointCount)
-            polyline.getCoordinates(&points, range: NSRange(location: 0, length: polyline.pointCount))
-            
-            for point in points {
-                coordinates.append([point.longitude, point.latitude])
-            }
-        }
-        
-        return [
-            "type": "Feature",
-            "geometry": [
-                "type": "LineString",
-                "coordinates": coordinates
-            ],
-            "properties": [
-                "distance": route.distance,
-                "expectedTravelTime": route.expectedTravelTime
-            ]
-        ]
-    }
-    
-    private func fitTourStopsInView(tourStops: [TourStop]) {
-        guard !tourStops.isEmpty else { return }
-        // Remove duplicate coordinates manually
-        let coords = tourStops.map { $0.coordinate }
-        var uniqueCoords: [CLLocationCoordinate2D] = []
-        for coord in coords {
-            if !uniqueCoords.contains(where: { $0.latitude == coord.latitude && $0.longitude == coord.longitude }) {
-                uniqueCoords.append(coord)
-            }
-        }
-        
-        
-        guard !uniqueCoords.isEmpty else { return }
-        var minLat = uniqueCoords[0].latitude
-        var maxLat = uniqueCoords[0].latitude
-        var minLon = uniqueCoords[0].longitude
-        var maxLon = uniqueCoords[0].longitude
-        for coord in uniqueCoords {
-            minLat = min(minLat, coord.latitude)
-            maxLat = max(maxLat, coord.latitude)
-            minLon = min(minLon, coord.longitude)
-            maxLon = max(maxLon, coord.longitude)
-        }
         let latPadding = 0.002
         let lonPadding = 0.002
         let center = CLLocationCoordinate2D(
@@ -381,46 +443,43 @@ class TourView: UIViewController, MKMapViewDelegate {
         mapView.setRegion(region, animated: true)
     }
     
-    // MARK: - MKMapViewDelegate
-    func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
-        // No overlay logic for these symbols
-    }
-    func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-        // No overlay logic for these symbols
-    }
-    
+    private var cancellables = Set<AnyCancellable>()
+}
+
+// MARK: - MapKit Delegate
+
+extension TourViewController: MKMapViewDelegate {
     func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
-        overlayView?.setNeedsDisplay()
-    }
-    
-    private func currentZoomScale() -> CGFloat {
-        let mapRect = mapView.visibleMapRect
-        let viewWidth = mapView.bounds.width
-        return CGFloat(mapRect.size.width) / viewWidth
+        overlayView.setNeedsDisplay()
     }
 }
 
-// SwiftUI wrapper for UIKit TourView
+// MARK: - SwiftUI Integration
+
 struct TourViewRepresentable: UIViewControllerRepresentable {
     let addresses: [String]
     
-    func makeUIViewController(context: Context) -> TourView {
-        return TourView(addresses: addresses)
+    func makeUIViewController(context: Context) -> TourViewController {
+        let viewModel = TourViewModel()
+        let controller = TourViewController(viewModel: viewModel)
+        viewModel.loadTour(addresses: addresses)
+        return controller
     }
     
-    func updateUIViewController(_ uiViewController: TourView, context: Context) {
+    func updateUIViewController(_ uiViewController: TourViewController, context: Context) {
         // No updates needed
     }
 }
 
-// Main ContentView
+// MARK: - Main ContentView
+
 struct ContentView: View {
-    let sampleAddresses = [
+    private let sampleAddresses = [
         "Whitby station, Station Square, Whitby, North Yorkshire, YO21 1YN",
         "Whitby Museum, Pannett Park, Whitby, North Yorkshire, YO21 1RE",
         "6 Royal Crescent, Whitby, North Yorkshire, YO21 3EJ",
-        "40 Cliff St, Whitby, North Yorkshire, yo21 4dd",
-         "25 Flowergate, Whitby YO21 3BB",
+        "North Terrace, Whitby YO21 3HA",
+        "1 bakehouse yard, yo21 3ps",
         "Swing Bridge, Bridge St, Whitby YO22 4BG",
         "St Mary's church, Abbey Plain, Whitby YO22 4JR"
     ]
@@ -429,4 +488,14 @@ struct ContentView: View {
         TourViewRepresentable(addresses: sampleAddresses)
     }
 }
+
+// MARK: - Legacy Support (for existing TourStop struct)
+
+struct TourStop {
+    let coordinate: CLLocationCoordinate2D
+    let title: String
+    let subtitle: String
+    let index: Int
+}
+
 
