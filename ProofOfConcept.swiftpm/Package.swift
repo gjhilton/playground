@@ -8,18 +8,18 @@ import PackageDescription
 import AppleProductTypes
 
 let package = Package(
-    name: "My App",
+    name: "ProofOfConcept",
     platforms: [
         .iOS("18.1")
     ],
     products: [
         .iOSApplication(
-            name: "My App",
+            name: "ProofOfConcept",
             targets: ["AppModule"],
             displayVersion: "1.0",
             bundleVersion: "1",
-            appIcon: .placeholder(icon: .bicycle),
-            accentColor: .presetColor(.cyan),
+            appIcon: .placeholder(icon: .openBook),
+            accentColor: .presetColor(.red),
             supportedDeviceFamilies: [
                 .pad,
                 .phone
@@ -31,7 +31,7 @@ let package = Package(
                 .portraitUpsideDown(.when(deviceFamilies: [.pad]))
             ],
             capabilities: [
-                .locationWhenInUse(purposeString: "So we can give you a tour")
+                .locationWhenInUse(purposeString: "So we can guide your tour")
             ]
         )
     ],

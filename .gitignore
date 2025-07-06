@@ -75,3 +75,10 @@ fastlane/test_output
 /BrokenVideoAgain.swiftpm/Resources/example.MP4
 /Broken video.swiftpm/.swiftpm/playgrounds/**
 /Broken video.swiftpm/Resources/example.MP4
+/ProofOfConcept.swiftpm/.swiftpm/playgrounds/**
+/My App copy.swiftpm/.swiftpm/**
+/My App copy.swiftpm/.build/artifacts/**
+/My App copy.swiftpm/.build/checkouts/**
+/My App copy.swiftpm/.build/repositories/**
+/LitPlane.swiftpm/.swiftpm/playgrounds/**
+/LitPlane.swiftpm/.vscode/**

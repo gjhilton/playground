@@ -8,18 +8,18 @@ import PackageDescription
 import AppleProductTypes
 
 let package = Package(
-    name: "My App",
+    name: "Tour",
     platforms: [
         .iOS("18.1")
     ],
     products: [
         .iOSApplication(
-            name: "My App",
+            name: "Tour",
             targets: ["AppModule"],
             displayVersion: "1.0",
             bundleVersion: "1",
-            appIcon: .placeholder(icon: .chatMessage),
-            accentColor: .presetColor(.purple),
+            appIcon: .placeholder(icon: .calendar),
+            accentColor: .presetColor(.brown),
             supportedDeviceFamilies: [
                 .pad,
                 .phone
@@ -29,6 +29,9 @@ let package = Package(
                 .landscapeRight,
                 .landscapeLeft,
                 .portraitUpsideDown(.when(deviceFamilies: [.pad]))
+            ],
+            capabilities: [
+                .locationWhenInUse(purposeString: "For the tour")
             ]
         )
     ],
@@ -36,9 +39,6 @@ let package = Package(
         .executableTarget(
             name: "AppModule",
             path: ".",
-            resources: [
-                .process("Resources")
-            ],
             swiftSettings: [
                 .enableUpcomingFeature("BareSlashRegexLiterals")
             ]

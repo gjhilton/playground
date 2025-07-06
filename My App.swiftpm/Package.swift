@@ -8,18 +8,18 @@ import PackageDescription
 import AppleProductTypes
 
 let package = Package(
-    name: "My App",
+    name: "RadioStar",
     platforms: [
         .iOS("18.1")
     ],
     products: [
         .iOSApplication(
-            name: "My App",
+            name: "RadioStar",
             targets: ["AppModule"],
             displayVersion: "1.0",
             bundleVersion: "1",
-            appIcon: .placeholder(icon: .bicycle),
-            accentColor: .presetColor(.cyan),
+            appIcon: .placeholder(icon: .star),
+            accentColor: .presetColor(.red),
             supportedDeviceFamilies: [
                 .pad,
                 .phone
@@ -29,9 +29,6 @@ let package = Package(
                 .landscapeRight,
                 .landscapeLeft,
                 .portraitUpsideDown(.when(deviceFamilies: [.pad]))
-            ],
-            capabilities: [
-                .locationWhenInUse(purposeString: "So we can give you a tour")
             ]
         )
     ],

@@ -1,0 +1,21 @@
+{
+  "title": "Chapters",
+  "type": "menu",
+  "children": [
+    {
+      "title": "Chapter 1: Jonathan Harker's Journal",
+      "type": "page",
+      "htmlFile": "Chapter1.html"
+    },
+    {
+      "title": "Chapter 2: The Castle",
+      "type": "page",
+      "htmlFile": "Chapter2.html"
+    },
+    {
+      "title": "Chapter 3: Mina's Letter",
+      "type": "page",
+      "htmlFile": "Chapter3.html"
+    }
+  ]
+} 

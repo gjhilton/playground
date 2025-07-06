@@ -1,0 +1,21 @@
+{
+  "title": "Extras",
+  "type": "menu",
+  "children": [
+    {
+      "title": "The Novel",
+      "type": "externalMenu",
+      "jsonFile": "Chapters.json"
+    },
+    {
+      "title": "Other Recreations in Whitby",
+      "type": "page",
+      "htmlFile": "Recreations.html"
+    },
+    {
+      "title": "Credits",
+      "type": "page",
+      "htmlFile": "Credits.html"
+    }
+  ]
+} 

@@ -1,103 +1,80 @@
 import SwiftUI
 import AVFoundation
-import UIKit
 
-class VideoLayerView: UIView {
-    var displayLayer: CALayer!
-    var player: AVPlayer!
-    var playerLayer: AVPlayerLayer!
-    var output: AVPlayerItemVideoOutput!
+class CroppedVideoViewModel: ObservableObject {
+    @Published var videoSize: CGSize = .zero
     
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        self.displayLayer = CALayer()
-        self.layer.addSublayer(displayLayer)
-        setupPlayer()
+    func loadVideo(url: URL) {
+        let asset = AVAsset(url: url)
+        let track = asset.tracks(withMediaType: .video).first
+        let size = track?.naturalSize ?? CGSize.zero
+        self.videoSize = size
     }
-    
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        self.displayLayer = CALayer()
-        self.layer.addSublayer(displayLayer)
-        setupPlayer()
-    }
-    
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        // Ensure the CALayer is the size of the parent view
-        displayLayer.frame = bounds
-        playerLayer.frame = bounds
-    }
-    
-    func setupPlayer() {
-        guard let url = Bundle.main.url(forResource: "example", withExtension: "MP4") else {
-            print("Video file not found")
-            return
-        }
-        
-        let playerItem = AVPlayerItem(url: url)
-        player = AVPlayer(playerItem: playerItem)
-        
-        // Create video output
-        output = AVPlayerItemVideoOutput()
-        playerItem.add(output)
-        
-        // Set up player layer
-        playerLayer = AVPlayerLayer(player: player)
-        layer.addSublayer(playerLayer)
-        
-        // Hide the AVPlayerLayer, so only the processed video frame is shown
-        playerLayer.isHidden = true
-        
-        // Start playing
-        player.play()
-        
-        // Set a timer to capture video frames and update the layer
-        Timer.scheduledTimer(timeInterval: 1/30, target: self, selector: #selector(updateFrame), userInfo: nil, repeats: true)
-    }
-    
-    @objc func updateFrame() {
-        guard let currentItem = player.currentItem else { return }
-        
-        let currentTime = player.currentTime()
-        
-        // Use CMTime directly for itemTimeForDisplay
-        var timing = CMTimeMake(value: 0, timescale: 0) // Initialize a default CMTime
-        
-        // Check if we have a video frame
-        if let pixelBuffer = output.copyPixelBuffer(forItemTime: currentTime, itemTimeForDisplay: &timing) {
-            processPixelBuffer(pixelBuffer)
-        }
-    }
-    
-    func processPixelBuffer(_ pixelBuffer: CVPixelBuffer) {
-        // Convert the pixel buffer to a CIImage
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        let context = CIContext()
-        
-        // Create a CGImage from the CIImage
-        if let cgImage = context.createCGImage(ciImage, from: ciImage.extent) {
-            // Display the frame in the layer
-            displayLayer.contents = cgImage
-        }
-    }
-}
-
-struct VideoLayerViewRepresentable: UIViewRepresentable {
-    func makeUIView(context: Context) -> VideoLayerView {
-        return VideoLayerView()
-    }
-    
-    func updateUIView(_ uiView: VideoLayerView, context: Context) {}
 }
 
 struct ContentView: View {
+    @StateObject var viewModel = CroppedVideoViewModel()
+    
     var body: some View {
-        VideoLayerViewRepresentable()
-            .edgesIgnoringSafeArea(.all)
+        ZStack {
+            if viewModel.videoSize != .zero {
+                let aspectRatio = viewModel.videoSize.width / viewModel.videoSize.height
+                let screenHeight = UIScreen.main.bounds.height
+                let screenWidth = screenHeight * aspectRatio
+                
+                CroppedVideoRepresentable(viewModel: viewModel)
+                    .frame(width: screenWidth, height: screenHeight)
+                    .position(x: UIScreen.main.bounds.width / 2, y: screenHeight / 2)
+            }
+        }
+        .onAppear {
+            if let url = Bundle.main.url(forResource: "example", withExtension: "MP4") {
+                viewModel.loadVideo(url: url)
+            } else {
+                print("Video not found!")
+            }
+        }
     }
 }
 
-#Preview {
-    ContentView()
+struct CroppedVideoRepresentable: UIViewRepresentable {
+    @ObservedObject var viewModel: CroppedVideoViewModel
+    
+    func makeUIView(context: Context) -> UIView {
+        return CroppedVideo(viewModel: viewModel, frame: CGRect(x: 0, y: 0, width: viewModel.videoSize.width, height: viewModel.videoSize.height))
+    }
+    
+    func updateUIView(_ uiView: UIView, context: Context) {
+    }
+}
+
+class CroppedVideo: UIView {
+    
+    @ObservedObject var viewModel: CroppedVideoViewModel
+    private var videoLayer: AVPlayerLayer!
+    
+    init(viewModel: CroppedVideoViewModel, frame: CGRect) {
+        self.viewModel = viewModel
+        super.init(frame: frame)
+        
+        self.backgroundColor = .black
+
+        videoLayer = AVPlayerLayer()
+        videoLayer.frame = CGRect(x: 0, y: 0, width: viewModel.videoSize.width * 2, height: viewModel.videoSize.height * 2)
+        self.layer.addSublayer(videoLayer)
+        
+        if let url = Bundle.main.url(forResource: "example", withExtension: "MP4") {
+            loadAndPlayVideo(url: url)
+        }
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    private func loadAndPlayVideo(url: URL) {
+        let player = AVPlayer(url: url)
+        videoLayer.player = player
+        player.play()
+    }
 }
