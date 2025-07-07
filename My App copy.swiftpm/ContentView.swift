@@ -339,7 +339,15 @@ class TourViewController: UIViewController {
         mapView.delegate = self
         mapView.translatesAutoresizingMaskIntoConstraints = false
         
-        // Configure map appearance
+        // 🔧 Make the map view transparent
+        mapView.alpha = 0.01 // 0 = fully transparent, 1 = fully opaque
+        
+        // OR if you want to make only the map background invisible (not overlays)
+        mapView.isOpaque = false
+        mapView.backgroundColor = .clear
+        mapView.layer.backgroundColor = UIColor.clear.cgColor
+        
+        // Optionally remove extra visuals
         mapView.mapType = .standard
         mapView.showsPointsOfInterest = false
         mapView.showsBuildings = false
