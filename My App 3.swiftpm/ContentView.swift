@@ -3,7 +3,7 @@ import MapKit
 
 // ObservableObject that stores the camera state
 class CameraPositionModel: ObservableObject {
-    @Published var position: MapCameraPosition
+    @Published var slavePosition: MapCameraPosition
     
     init() {
         let camera = MapCamera(
@@ -12,12 +12,18 @@ class CameraPositionModel: ObservableObject {
             heading: 0,
             pitch: 0
         )
-        self.position = .camera(camera)
+        self.slavePosition = .camera(camera)
     }
 }
 
 struct DoubleMap: View {
     @StateObject private var cameraModel = CameraPositionModel()
+    @State private var masterPosition: MapCameraPosition = .camera(MapCamera(
+        centerCoordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+        distance: 5000,
+        heading: 0,
+        pitch: 0
+    ))
     
     var body: some View {
         VStack(spacing: 20) {
@@ -25,10 +31,10 @@ struct DoubleMap: View {
                 .font(.headline)
             
             // Interactive map with camera tracking and opacity
-            Map(position: $cameraModel.position)
-                .onMapCameraChange { context in
+            Map(position: $masterPosition)
+                .onMapCameraChange(frequency: .continuous) { context in
                     // This ensures updates from user interaction are captured
-                    cameraModel.position = .camera(context.camera)
+                    cameraModel.slavePosition = .camera(context.camera)
                 }
                 .mapControlVisibility(.visible)
                 .opacity(0.3)
@@ -37,7 +43,7 @@ struct DoubleMap: View {
                 .padding(.horizontal)
             
             // Grayscale mirror map, always uses latest camera
-            Map(position: $cameraModel.position)
+            Map(position: $cameraModel.slavePosition)
                 .mapControlVisibility(.hidden)
                 .allowsHitTesting(false)
                 .saturation(0)
