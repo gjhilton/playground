@@ -1,7 +1,6 @@
 import SwiftUI
 import MapKit
 
-// ObservableObject that stores the camera state
 class CameraPositionModel: ObservableObject {
     @Published var slavePosition: MapCameraPosition
     
@@ -27,21 +26,35 @@ struct DoubleMap: View {
     
     var body: some View {
         ZStack {
-            // Bottom map: grayscale, mirrors top map's camera
+            // Bottom map: grayscale mirror
             Map(position: $cameraModel.slavePosition)
                 .mapControlVisibility(.hidden)
                 .allowsHitTesting(false)
                 .saturation(0)
+                .preferredColorScheme(.light) // ✅ Force light mode only here
             
-            // Top map: interactive, semi-transparent
+            // Top map: interactive, transparent
             Map(position: $masterPosition)
                 .onMapCameraChange(frequency: .continuous) { context in
                     cameraModel.slavePosition = .camera(context.camera)
                 }
                 .mapControlVisibility(.visible)
-                .opacity(0.01)
+                .opacity(0.1)
+            
+            // Brown color overlay using multiply mode — doesn't block touch
+            Color(red: 0.5, green: 0.2, blue:  0)
+                .opacity(1)
+                .blendMode(.screen)
+                .allowsHitTesting(false)
+           // Color(red: 1, green: 0.97, blue:  0.95)
+                //.opacity(1)
+                //.blendMode(.screen)
+                //.allowsHitTesting(false)
+            
         }
-        .frame(height: 300)
+        .compositingGroup() // Needed for blendMode
+        //.preferredColorScheme(.light)
+        //.frame(height: 300)
         .cornerRadius(12)
         .padding(.horizontal)
     }
@@ -49,11 +62,9 @@ struct DoubleMap: View {
 
 struct ContentView: View {
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Overlayed Maps — Interactive Layer at 0.1 Opacity")
-                .font(.headline)
+        
             DoubleMap()
-        }
+        
     }
 }
 
