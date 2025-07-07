@@ -26,37 +26,34 @@ struct DoubleMap: View {
     ))
     
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Interactive Map (top) & Grayscale Mirror (bottom)")
-                .font(.headline)
-            
-            // Interactive map with camera tracking and opacity
-            Map(position: $masterPosition)
-                .onMapCameraChange(frequency: .continuous) { context in
-                    // This ensures updates from user interaction are captured
-                    cameraModel.slavePosition = .camera(context.camera)
-                }
-                .mapControlVisibility(.visible)
-                .opacity(0.3)
-                .frame(height: 300)
-                .cornerRadius(12)
-                .padding(.horizontal)
-            
-            // Grayscale mirror map, always uses latest camera
+        ZStack {
+            // Bottom map: grayscale, mirrors top map's camera
             Map(position: $cameraModel.slavePosition)
                 .mapControlVisibility(.hidden)
                 .allowsHitTesting(false)
                 .saturation(0)
-                .frame(height: 300)
-                .cornerRadius(12)
-                .padding(.horizontal)
+            
+            // Top map: interactive, semi-transparent
+            Map(position: $masterPosition)
+                .onMapCameraChange(frequency: .continuous) { context in
+                    cameraModel.slavePosition = .camera(context.camera)
+                }
+                .mapControlVisibility(.visible)
+                .opacity(0.01)
         }
+        .frame(height: 300)
+        .cornerRadius(12)
+        .padding(.horizontal)
     }
 }
 
 struct ContentView: View {
     var body: some View {
-        DoubleMap()
+        VStack(spacing: 20) {
+            Text("Overlayed Maps — Interactive Layer at 0.1 Opacity")
+                .font(.headline)
+            DoubleMap()
+        }
     }
 }
 
