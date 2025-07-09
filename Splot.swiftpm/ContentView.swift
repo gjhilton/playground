@@ -1,4 +1,4 @@
-// Version: 89
+// Version: 91
 import SwiftUI
 import AVFoundation
 import MetalKit
@@ -161,15 +161,12 @@ struct ContentView: View {
             ZStack {
                 Color.white.ignoresSafeArea()
                 VStack(spacing: 24) {
-                    Button("Button 1") {
-                        playAlertSound()
+                    Button("Clear Splats") {
+                        splats.removeAll()
                     }
                     .buttonStyle(.borderedProminent)
-                    .font(.title2)
-                    Button("Button 2") {
-                        playAlertSound()
-                    }
-                    .buttonStyle(.borderedProminent)
+                    .tint(.black)
+                    .foregroundColor(.white)
                     .font(.title2)
                 }
                 // Visualize splats as blue dots/ellipses (commented out for Metal-only test)
@@ -195,6 +192,7 @@ struct ContentView: View {
                 MetalOverlayView(xs: overlayDotXs, ys: overlayDotYs, radii: overlayDotRadii)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
+                    .blendMode(.multiply)
             }
             .ignoresSafeArea()
             .simultaneousGesture(
