@@ -1,4 +1,4 @@
-// v4k
+// v4o
 import SwiftUI
 import AVFoundation
 import MetalKit
@@ -184,16 +184,13 @@ struct ContentView: View {
                         }
                     }
                 }
-                // Transparent overlay to capture taps and add splats
-                Color.clear
-                    .contentShape(Rectangle())
                 // Metal overlay ON TOP, does not block touches
                 MetalOverlayView(splatDots: allSplatDots)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
             }
             .ignoresSafeArea()
-            .gesture(
+            .simultaneousGesture(
                 DragGesture(minimumDistance: 0)
                     .onEnded { value in
                         let location = value.location
@@ -209,11 +206,17 @@ struct ContentView: View {
     }
 }
 
+class PassthroughMTKView: MTKView {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        return nil // Never intercept touches
+    }
+}
+
 struct MetalOverlayView: UIViewRepresentable {
     let splatDots: [SplatDot]
     func makeUIView(context: Context) -> MTKView {
         let device = MTLCreateSystemDefaultDevice()!
-        let mtkView = MTKView(frame: .zero, device: device)
+        let mtkView = PassthroughMTKView(frame: .zero, device: device)
         mtkView.clearColor = MTLClearColorMake(0, 0, 0, 0) // fully transparent
         mtkView.isOpaque = false
         mtkView.backgroundColor = .clear
