@@ -1,4 +1,4 @@
-// Version: 91
+// Version: 94
 import SwiftUI
 import AVFoundation
 import MetalKit
@@ -33,6 +33,7 @@ struct Splat: Identifiable, Equatable {
         let splashWidthRange: ClosedRange<CGFloat>
         let splashDistanceRange: ClosedRange<CGFloat>
         let splashRotationJitter: ClosedRange<Double>
+        let splotColor: SIMD3<Float>
     }
 
     static let params = Parameters(
@@ -50,7 +51,8 @@ struct Splat: Identifiable, Equatable {
         splashLengthRange: 20...60,
         splashWidthRange: 10...30,
         splashDistanceRange: 80.0...140.0, // doubled
-        splashRotationJitter: -10...10
+        splashRotationJitter: -10...10,
+        splotColor: SIMD3<Float>(0.6, 0, 0)
     )
 
     static func generate(center: CGPoint, params: Parameters = Splat.params) -> Splat {
@@ -156,6 +158,8 @@ struct ContentView: View {
         splats.flatMap { $0.dots }
     }
 
+    var splotColor: SIMD3<Float> { Splat.params.splotColor }
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
@@ -189,7 +193,7 @@ struct ContentView: View {
                 }
                 */
                 // Metal overlay ON TOP, does not block touches
-                MetalOverlayView(xs: overlayDotXs, ys: overlayDotYs, radii: overlayDotRadii)
+                MetalOverlayView(xs: overlayDotXs, ys: overlayDotYs, radii: overlayDotRadii, splotColor: splotColor)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
                     .blendMode(.multiply)
@@ -233,6 +237,7 @@ struct MetalOverlayView: UIViewRepresentable {
     let xs: [Float]
     let ys: [Float]
     let radii: [Float]
+    let splotColor: SIMD3<Float>
     func makeUIView(context: Context) -> MTKView {
         let device = MTLCreateSystemDefaultDevice()!
         let mtkView = PassthroughMTKView(frame: .zero, device: device)
@@ -255,9 +260,10 @@ struct MetalOverlayView: UIViewRepresentable {
         uiView.setNeedsDisplay()
     }
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(splotColor: splotColor)
     }
     class Coordinator: NSObject, MTKViewDelegate {
+        let splotColor: SIMD3<Float>
         var xs: [Float] = Array(repeating: 0, count: 512)
         var ys: [Float] = Array(repeating: 0, count: 512)
         var radii: [Float] = Array(repeating: 0, count: 512)
@@ -282,7 +288,8 @@ struct MetalOverlayView: UIViewRepresentable {
                                       constant float* xs [[buffer(1)]],
                                       constant float* ys [[buffer(2)]],
                                       constant float* radii [[buffer(3)]],
-                                      constant float& aspect [[buffer(4)]]) {
+                                      constant float& aspect [[buffer(4)]],
+                                      constant float3& splotColor [[buffer(5)]]) {
             float2 uv = in.uv;
             float field = 0.0;
             for (uint i = 0; i < 512; ++i) {
@@ -290,15 +297,16 @@ struct MetalOverlayView: UIViewRepresentable {
                 float2 aspect_uv = float2((uv.x - center.x) * aspect, uv.y - center.y);
                 float radius = radii[i] / 200.0;
                 float dist = length(aspect_uv);
-                // Metaball field: f = (r^2) / (d^2 + eps)
                 field += (radius * radius) / (dist * dist + 1e-4);
             }
-            // Threshold for metaball surface
             float threshold = 0.8;
             float alpha = smoothstep(threshold, threshold + 0.15, field);
-            return float4(0.2, 0.4, 1.0, alpha);
+            return float4(splotColor, alpha);
         }
         """
+        init(splotColor: SIMD3<Float> = SIMD3<Float>(0.2, 0.4, 1.0)) {
+            self.splotColor = splotColor
+        }
         func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
         func draw(in view: MTKView) {
             guard let drawable = view.currentDrawable,
@@ -335,6 +343,8 @@ struct MetalOverlayView: UIViewRepresentable {
             encoder.setFragmentBytes(&ys, length: MemoryLayout<Float>.stride * 512, index: 2)
             encoder.setFragmentBytes(&radii, length: MemoryLayout<Float>.stride * 512, index: 3)
             encoder.setFragmentBytes(&aspect, length: MemoryLayout<Float>.stride, index: 4)
+            var splotColorVar = splotColor
+            encoder.setFragmentBytes(&splotColorVar, length: MemoryLayout<SIMD3<Float>>.stride, index: 5)
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
             encoder.endEncoding()
             commandBuffer.present(drawable)
