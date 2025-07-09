@@ -1,10 +1,10 @@
-// v4p
+// Version: 72
 import SwiftUI
 import AVFoundation
 import MetalKit
 import simd
 
-struct SplatDot: Identifiable {
+struct SplatDot: Identifiable, Equatable {
     let id: UUID = UUID()
     let position: CGPoint
     let size: CGSize
@@ -12,7 +12,7 @@ struct SplatDot: Identifiable {
     let rotation: Double
 }
 
-struct Splat: Identifiable {
+struct Splat: Identifiable, Equatable {
     let id: UUID = UUID()
     let center: CGPoint
     let dots: [SplatDot]
@@ -146,6 +146,11 @@ struct Splat: Identifiable {
 struct ContentView: View {
     @State private var audioPlayer: AVAudioPlayer?
     @State private var splats: [Splat] = []
+    @State private var overlayColor: SIMD3<Float> = SIMD3<Float>(1, 0, 0)
+    @State private var overlayDotXs: [Float] = Array(repeating: 0, count: 8)
+    @State private var overlayDotYs: [Float] = Array(repeating: 0, count: 8)
+    @State private var overlayDotRadii: [Float] = Array(repeating: 0, count: 8)
+    @State private var tapCount: Int = 0
 
     var allSplatDots: [SplatDot] {
         splats.flatMap { $0.dots }
@@ -167,7 +172,8 @@ struct ContentView: View {
                     .buttonStyle(.borderedProminent)
                     .font(.title2)
                 }
-                // Visualize splats as blue dots/ellipses
+                // Visualize splats as blue dots/ellipses (commented out for Metal-only test)
+                /*
                 ForEach(splats) { splat in
                     ForEach(splat.dots) { dot in
                         if dot.isEllipse {
@@ -184,8 +190,9 @@ struct ContentView: View {
                         }
                     }
                 }
+                */
                 // Metal overlay ON TOP, does not block touches
-                MetalOverlayView(splatDots: allSplatDots)
+                MetalOverlayView(xs: overlayDotXs, ys: overlayDotYs, radii: overlayDotRadii)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
             }
@@ -193,10 +200,22 @@ struct ContentView: View {
             .simultaneousGesture(
                 DragGesture(minimumDistance: 0)
                     .onEnded { value in
-                        let location = value.location
-                        splats.append(Splat.generate(center: location))
+                        splats.append(Splat.generate(center: value.location))
                     }
             )
+            .onChange(of: splats) { _ in
+                let width = geo.size.width
+                let height = geo.size.height
+                let allDots = allSplatDots.prefix(8)
+                let xs = allDots.map { Float($0.position.x / width) } + Array(repeating: 0, count: max(0, 8 - allDots.count))
+                let ys = allDots.map { 1 - Float($0.position.y / height) } + Array(repeating: 0, count: max(0, 8 - allDots.count))
+                let radii = allDots.map { Float($0.size.width / 2) } + Array(repeating: 0, count: max(0, 8 - allDots.count))
+                print("[MetalOverlay] xs: \(xs), ys: \(ys)")
+                print("[MetalOverlay] dot positions: \(allDots.map { $0.position })")
+                overlayDotXs = xs
+                overlayDotYs = ys
+                overlayDotRadii = radii
+            }
         }
     }
 
@@ -213,7 +232,9 @@ class PassthroughMTKView: MTKView {
 }
 
 struct MetalOverlayView: UIViewRepresentable {
-    let splatDots: [SplatDot]
+    let xs: [Float]
+    let ys: [Float]
+    let radii: [Float]
     func makeUIView(context: Context) -> MTKView {
         let device = MTLCreateSystemDefaultDevice()!
         let mtkView = PassthroughMTKView(frame: .zero, device: device)
@@ -229,7 +250,9 @@ struct MetalOverlayView: UIViewRepresentable {
     }
     func updateUIView(_ uiView: MTKView, context: Context) {
         if let coordinator = context.coordinator as? Coordinator {
-            coordinator.splatDots = splatDots.filter { !$0.isEllipse }
+            coordinator.xs = xs
+            coordinator.ys = ys
+            coordinator.radii = radii
         }
         uiView.setNeedsDisplay()
     }
@@ -237,73 +260,76 @@ struct MetalOverlayView: UIViewRepresentable {
         Coordinator()
     }
     class Coordinator: NSObject, MTKViewDelegate {
-        var splatDots: [SplatDot] = []
+        var xs: [Float] = Array(repeating: 0, count: 8)
+        var ys: [Float] = Array(repeating: 0, count: 8)
+        var radii: [Float] = Array(repeating: 0, count: 8)
         private var pipelineState: MTLRenderPipelineState?
         private var commandQueue: MTLCommandQueue?
-        private let circleSegments = 40
         private let metalSource = """
         using namespace metal;
         struct Vertex {
             float2 position [[attribute(0)]];
         };
-        vertex float4 vertex_main(const device Vertex* vertices [[buffer(0)]], uint vid [[vertex_id]]) {
-            return float4(vertices[vid].position, 0.0, 1.0);
+        struct VertexOut {
+            float4 position [[position]];
+            float2 uv;
+        };
+        vertex VertexOut vertex_main(const device Vertex* vertices [[buffer(0)]], uint vid [[vertex_id]]) {
+            VertexOut out;
+            out.position = float4(vertices[vid].position, 0.0, 1.0);
+            out.uv = (vertices[vid].position + 1.0) * 0.5;
+            return out;
         }
-        fragment float4 fragment_main() {
-            return float4(0.0, 0.4, 1.0, 0.7); // Blue
+        fragment float4 fragment_main(VertexOut in [[stage_in]],
+                                      constant float* xs [[buffer(1)]],
+                                      constant float* ys [[buffer(2)]],
+                                      constant float* radii [[buffer(3)]]) {
+            float2 uv = in.uv;
+            float alpha = 0.0;
+            for (uint i = 0; i < 8; ++i) {
+                float2 center = float2(xs[i], ys[i]);
+                float radius = radii[i] / 200.0;
+                float dist = distance(uv, center);
+                alpha = max(alpha, smoothstep(radius, radius - 0.01, dist));
+            }
+            return float4(0.2, 0.4, 1.0, alpha);
         }
         """
         func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
         func draw(in view: MTKView) {
             guard let drawable = view.currentDrawable,
                   let descriptor = view.currentRenderPassDescriptor else { return }
-            let device = view.device!
+            var xs = self.xs
+            var ys = self.ys
+            var radii = self.radii
+            let quadVertices: [SIMD2<Float>] = [
+                SIMD2<Float>(-1, -1),
+                SIMD2<Float>(-1,  1),
+                SIMD2<Float>( 1, -1),
+                SIMD2<Float>( 1, -1),
+                SIMD2<Float>(-1,  1),
+                SIMD2<Float>( 1,  1)
+            ]
+            let quadBuffer = view.device!.makeBuffer(bytes: quadVertices, length: MemoryLayout<SIMD2<Float>>.stride * quadVertices.count, options: [])
             if pipelineState == nil {
-                let library = try! device.makeLibrary(source: metalSource, options: nil)
+                let library = try! view.device!.makeLibrary(source: metalSource, options: nil)
                 let vertexFunc = library.makeFunction(name: "vertex_main")
                 let fragmentFunc = library.makeFunction(name: "fragment_main")
                 let pipelineDesc = MTLRenderPipelineDescriptor()
                 pipelineDesc.vertexFunction = vertexFunc
                 pipelineDesc.fragmentFunction = fragmentFunc
                 pipelineDesc.colorAttachments[0].pixelFormat = .bgra8Unorm
-                pipelineState = try! device.makeRenderPipelineState(descriptor: pipelineDesc)
-                commandQueue = device.makeCommandQueue()
+                pipelineState = try! view.device!.makeRenderPipelineState(descriptor: pipelineDesc)
+                commandQueue = view.device!.makeCommandQueue()
             }
             let commandBuffer = commandQueue!.makeCommandBuffer()!
             let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)!
             encoder.setRenderPipelineState(pipelineState!)
-            // Draw all non-ellipse splat dots as circles
-            let width = Float(view.bounds.width)
-            let height = Float(view.bounds.height)
-            for dot in splatDots {
-                // Convert dot position to NDC
-                let xNDC = (Float(dot.position.x) / width) * 2 - 1
-                let yNDC = (1 - Float(dot.position.y) / height) * 2 - 1
-                let center = float2(xNDC, yNDC)
-                let radius = Float(dot.size.width / 2) / width
-                var vertices: [float2] = []
-                for i in 0..<circleSegments {
-                    let iDouble = Double(i)
-                    let segmentsDouble = Double(circleSegments)
-                    let angle1 = iDouble / segmentsDouble * 2.0 * Double.pi
-                    let angle2 = (iDouble + 1.0) / segmentsDouble * 2.0 * Double.pi
-                    let cos1 = cos(angle1)
-                    let sin1 = sin(angle1)
-                    let cos2 = cos(angle2)
-                    let sin2 = sin(angle2)
-                    let x1 = Float(cos1) * radius
-                    let y1 = Float(sin1) * radius
-                    let x2 = Float(cos2) * radius
-                    let y2 = Float(sin2) * radius
-                    let p0 = center
-                    let p1 = float2(center.x + x1, center.y + y1)
-                    let p2 = float2(center.x + x2, center.y + y2)
-                    vertices.append(contentsOf: [p0, p1, p2])
-                }
-                let buffer = device.makeBuffer(bytes: vertices, length: vertices.count * MemoryLayout<float2>.stride, options: [])
-                encoder.setVertexBuffer(buffer, offset: 0, index: 0)
-                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices.count)
-            }
+            encoder.setVertexBuffer(quadBuffer, offset: 0, index: 0)
+            encoder.setFragmentBytes(&xs, length: MemoryLayout<Float>.stride * 8, index: 1)
+            encoder.setFragmentBytes(&ys, length: MemoryLayout<Float>.stride * 8, index: 2)
+            encoder.setFragmentBytes(&radii, length: MemoryLayout<Float>.stride * 8, index: 3)
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
             encoder.endEncoding()
             commandBuffer.present(drawable)
             commandBuffer.commit()
