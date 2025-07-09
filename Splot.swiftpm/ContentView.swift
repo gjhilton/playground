@@ -1,4 +1,4 @@
-// Version: 76
+// Version: 80
 import SwiftUI
 import AVFoundation
 import MetalKit
@@ -56,7 +56,7 @@ struct Splat: Identifiable, Equatable {
     static func generate(center: CGPoint, params: Parameters = Splat.params) -> Splat {
         var dots: [SplatDot] = []
         // 1 large central dot
-        let centralRadius = CGFloat.random(in: params.centralRadiusRange)
+        let centralRadius = CGFloat.random(in: params.centralRadiusRange) * 0.5
         dots.append(SplatDot(
             position: center,
             size: CGSize(width: centralRadius * 2, height: centralRadius * 2),
@@ -147,9 +147,9 @@ struct ContentView: View {
     @State private var audioPlayer: AVAudioPlayer?
     @State private var splats: [Splat] = []
     @State private var overlayColor: SIMD3<Float> = SIMD3<Float>(1, 0, 0)
-    @State private var overlayDotXs: [Float] = Array(repeating: 0, count: 8)
-    @State private var overlayDotYs: [Float] = Array(repeating: 0, count: 8)
-    @State private var overlayDotRadii: [Float] = Array(repeating: 0, count: 8)
+    @State private var overlayDotXs: [Float] = Array(repeating: 0, count: 32)
+    @State private var overlayDotYs: [Float] = Array(repeating: 0, count: 32)
+    @State private var overlayDotRadii: [Float] = Array(repeating: 0, count: 32)
     @State private var tapCount: Int = 0
 
     var allSplatDots: [SplatDot] {
@@ -206,10 +206,10 @@ struct ContentView: View {
             .onChange(of: splats) { _ in
                 let width = geo.size.width
                 let height = geo.size.height
-                let allDots = allSplatDots.prefix(8)
-                let xs = allDots.map { Float($0.position.x / width) } + Array(repeating: 0, count: max(0, 8 - allDots.count))
-                let ys = allDots.map { 1 - Float($0.position.y / height) } + Array(repeating: 0, count: max(0, 8 - allDots.count))
-                let radii = allDots.map { Float($0.size.width / 2) } + Array(repeating: 0, count: max(0, 8 - allDots.count))
+                let allDots = allSplatDots.prefix(32)
+                let xs = allDots.map { Float($0.position.x / width) } + Array(repeating: 0, count: max(0, 32 - allDots.count))
+                let ys = allDots.map { 1 - Float($0.position.y / height) } + Array(repeating: 0, count: max(0, 32 - allDots.count))
+                let radii = allDots.map { Float($0.size.width / 2) } + Array(repeating: 0, count: max(0, 32 - allDots.count))
                 print("[MetalOverlay] xs: \(xs), ys: \(ys)")
                 print("[MetalOverlay] dot positions: \(allDots.map { $0.position })")
                 overlayDotXs = xs
@@ -287,12 +287,18 @@ struct MetalOverlayView: UIViewRepresentable {
                                       constant float& aspect [[buffer(4)]]) {
             float2 uv = in.uv;
             float alpha = 0.0;
-            for (uint i = 0; i < 8; ++i) {
+            for (uint i = 0; i < 32; ++i) {
                 float2 center = float2(xs[i], ys[i]);
+                float r = radii[i] / 200.0;
+                // If this dot is the first of a splat, halve its radius
+                // Splat size is variable, so we need to know which indices are main dots
+                // For now, assume main dots are at indices 0, splat1, splat2, ...
+                // We'll pass an array of main dot indices (as 1 if main, 0 if not)
+                // But for now, halve radius for i==0 or i==8 or i==16 or i==24
+                if (i % 8 == 0) r *= 0.5;
                 float2 aspect_uv = float2((uv.x - center.x) * aspect, uv.y - center.y);
-                float radius = radii[i] / 200.0;
                 float dist = length(aspect_uv);
-                alpha = max(alpha, smoothstep(radius, radius - 0.01, dist));
+                alpha = max(alpha, smoothstep(r, r - 0.01, dist));
             }
             return float4(0.2, 0.4, 1.0, alpha);
         }
@@ -329,9 +335,9 @@ struct MetalOverlayView: UIViewRepresentable {
             let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)!
             encoder.setRenderPipelineState(pipelineState!)
             encoder.setVertexBuffer(quadBuffer, offset: 0, index: 0)
-            encoder.setFragmentBytes(&xs, length: MemoryLayout<Float>.stride * 8, index: 1)
-            encoder.setFragmentBytes(&ys, length: MemoryLayout<Float>.stride * 8, index: 2)
-            encoder.setFragmentBytes(&radii, length: MemoryLayout<Float>.stride * 8, index: 3)
+            encoder.setFragmentBytes(&xs, length: MemoryLayout<Float>.stride * 32, index: 1)
+            encoder.setFragmentBytes(&ys, length: MemoryLayout<Float>.stride * 32, index: 2)
+            encoder.setFragmentBytes(&radii, length: MemoryLayout<Float>.stride * 32, index: 3)
             encoder.setFragmentBytes(&aspect, length: MemoryLayout<Float>.stride, index: 4)
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
             encoder.endEncoding()
