@@ -1,4 +1,4 @@
-// v4o
+// v4p
 import SwiftUI
 import AVFoundation
 import MetalKit
@@ -228,12 +228,16 @@ struct MetalOverlayView: UIViewRepresentable {
         return mtkView
     }
     func updateUIView(_ uiView: MTKView, context: Context) {
+        if let coordinator = context.coordinator as? Coordinator {
+            coordinator.splatDots = splatDots.filter { !$0.isEllipse }
+        }
         uiView.setNeedsDisplay()
     }
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
     class Coordinator: NSObject, MTKViewDelegate {
+        var splatDots: [SplatDot] = []
         private var pipelineState: MTLRenderPipelineState?
         private var commandQueue: MTLCommandQueue?
         private let circleSegments = 40
@@ -268,36 +272,38 @@ struct MetalOverlayView: UIViewRepresentable {
             let commandBuffer = commandQueue!.makeCommandBuffer()!
             let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)!
             encoder.setRenderPipelineState(pipelineState!)
-            // Draw a single circle at center of screen
+            // Draw all non-ellipse splat dots as circles
             let width = Float(view.bounds.width)
             let height = Float(view.bounds.height)
-            let center = float2(0, 0) // NDC center
-            let radius: Float = 0.2 // NDC units (20% of min dimension)
-            var vertices: [float2] = []
-            for i in 0..<circleSegments {
-                let iDouble = Double(i)
-                let segmentsDouble = Double(circleSegments)
-                let angle1 = iDouble / segmentsDouble * 2.0 * Double.pi
-                let angle2 = (iDouble + 1.0) / segmentsDouble * 2.0 * Double.pi
-
-                let cos1 = cos(angle1)
-                let sin1 = sin(angle1)
-                let cos2 = cos(angle2)
-                let sin2 = sin(angle2)
-
-                let x1 = Float(cos1) * radius
-                let y1 = Float(sin1) * radius
-                let x2 = Float(cos2) * radius
-                let y2 = Float(sin2) * radius
-
-                let p0 = center
-                let p1 = float2(center.x + x1, center.y + y1)
-                let p2 = float2(center.x + x2, center.y + y2)
-                vertices.append(contentsOf: [p0, p1, p2])
+            for dot in splatDots {
+                // Convert dot position to NDC
+                let xNDC = (Float(dot.position.x) / width) * 2 - 1
+                let yNDC = (1 - Float(dot.position.y) / height) * 2 - 1
+                let center = float2(xNDC, yNDC)
+                let radius = Float(dot.size.width / 2) / width
+                var vertices: [float2] = []
+                for i in 0..<circleSegments {
+                    let iDouble = Double(i)
+                    let segmentsDouble = Double(circleSegments)
+                    let angle1 = iDouble / segmentsDouble * 2.0 * Double.pi
+                    let angle2 = (iDouble + 1.0) / segmentsDouble * 2.0 * Double.pi
+                    let cos1 = cos(angle1)
+                    let sin1 = sin(angle1)
+                    let cos2 = cos(angle2)
+                    let sin2 = sin(angle2)
+                    let x1 = Float(cos1) * radius
+                    let y1 = Float(sin1) * radius
+                    let x2 = Float(cos2) * radius
+                    let y2 = Float(sin2) * radius
+                    let p0 = center
+                    let p1 = float2(center.x + x1, center.y + y1)
+                    let p2 = float2(center.x + x2, center.y + y2)
+                    vertices.append(contentsOf: [p0, p1, p2])
+                }
+                let buffer = device.makeBuffer(bytes: vertices, length: vertices.count * MemoryLayout<float2>.stride, options: [])
+                encoder.setVertexBuffer(buffer, offset: 0, index: 0)
+                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices.count)
             }
-            let buffer = device.makeBuffer(bytes: vertices, length: vertices.count * MemoryLayout<float2>.stride, options: [])
-            encoder.setVertexBuffer(buffer, offset: 0, index: 0)
-            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices.count)
             encoder.endEncoding()
             commandBuffer.present(drawable)
             commandBuffer.commit()
