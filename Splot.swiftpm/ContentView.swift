@@ -1,4 +1,4 @@
-// Version: 72
+// Version: 76
 import SwiftUI
 import AVFoundation
 import MetalKit
@@ -283,13 +283,15 @@ struct MetalOverlayView: UIViewRepresentable {
         fragment float4 fragment_main(VertexOut in [[stage_in]],
                                       constant float* xs [[buffer(1)]],
                                       constant float* ys [[buffer(2)]],
-                                      constant float* radii [[buffer(3)]]) {
+                                      constant float* radii [[buffer(3)]],
+                                      constant float& aspect [[buffer(4)]]) {
             float2 uv = in.uv;
             float alpha = 0.0;
             for (uint i = 0; i < 8; ++i) {
                 float2 center = float2(xs[i], ys[i]);
+                float2 aspect_uv = float2((uv.x - center.x) * aspect, uv.y - center.y);
                 float radius = radii[i] / 200.0;
-                float dist = distance(uv, center);
+                float dist = length(aspect_uv);
                 alpha = max(alpha, smoothstep(radius, radius - 0.01, dist));
             }
             return float4(0.2, 0.4, 1.0, alpha);
@@ -302,6 +304,7 @@ struct MetalOverlayView: UIViewRepresentable {
             var xs = self.xs
             var ys = self.ys
             var radii = self.radii
+            var aspect = Float(view.bounds.width / view.bounds.height)
             let quadVertices: [SIMD2<Float>] = [
                 SIMD2<Float>(-1, -1),
                 SIMD2<Float>(-1,  1),
@@ -329,6 +332,7 @@ struct MetalOverlayView: UIViewRepresentable {
             encoder.setFragmentBytes(&xs, length: MemoryLayout<Float>.stride * 8, index: 1)
             encoder.setFragmentBytes(&ys, length: MemoryLayout<Float>.stride * 8, index: 2)
             encoder.setFragmentBytes(&radii, length: MemoryLayout<Float>.stride * 8, index: 3)
+            encoder.setFragmentBytes(&aspect, length: MemoryLayout<Float>.stride, index: 4)
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
             encoder.endEncoding()
             commandBuffer.present(drawable)
