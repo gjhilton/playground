@@ -64,16 +64,16 @@ struct Splat: Identifiable {
     let dots: [SplatDot]
     
     // MARK: - Splat Parameters
-    static let centralRadiusRange: ClosedRange<CGFloat> = 20...30
+    static let centralRadiusRange: ClosedRange<CGFloat> = 30...50
     static let largeCountRange: ClosedRange<Int> = 0...3
     static let largeRadiusRange: ClosedRange<CGFloat> = 15...25
-    static let largeDistanceRange: ClosedRange<CGFloat> = 12.5...22.5
+    static let largeDistanceRange: ClosedRange<CGFloat> = 12.5...33.75
     static let mediumCountRange: ClosedRange<Int> = 3...9
     static let mediumRadiusRange: ClosedRange<CGFloat> = 8...19
-    static let mediumDistanceRange: ClosedRange<CGFloat> = 20...35
+    static let mediumDistanceRange: ClosedRange<CGFloat> = 40...70
     static let smallCountRange: ClosedRange<Int> = 6...15
     static let smallRadiusRange: ClosedRange<CGFloat> = 5...10
-    static let smallDistanceRange: ClosedRange<CGFloat> = 30...55
+    static let smallDistanceRange: ClosedRange<CGFloat> = 30...82.5
     static let splashCountRange: ClosedRange<Int> = 0...6
     static let splashLengthRange: ClosedRange<CGFloat> = 20...60
     static let splashWidthRange: ClosedRange<CGFloat> = 10...30
@@ -153,6 +153,7 @@ struct Splat: Identifiable {
                 x: center.x + cos(angle) * dist,
                 y: center.y + sin(angle) * dist
             )
+            // Rotate so the ellipse points away from the center (radiates out)
             let rotation = Double(angle * 180 / .pi) + Double.random(in: Splat.splashRotationJitter)
             dots.append(SplatDot(
                 position: pos,
