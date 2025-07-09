@@ -1,4 +1,4 @@
-// Version: 84
+// Version: 88
 import SwiftUI
 import AVFoundation
 import MetalKit
@@ -36,15 +36,15 @@ struct Splat: Identifiable, Equatable {
     }
 
     static let params = Parameters(
-        centralRadiusRange: 15...25, // halved from 30...50
+        centralRadiusRange: 19.375...20.625, // 25% range size, centered on 20
         largeCountRange: 0...3,
-        largeRadiusRange: 15...25,
+        largeRadiusRange: 19.375...20.625, // 25% range size, centered on 20
         largeDistanceRange: 12.5...33.75,
         mediumCountRange: 3...9,
-        mediumRadiusRange: 8...19,
+        mediumRadiusRange: 13.625...14.375, // 25% range size, centered on 14
         mediumDistanceRange: 40...70,
         smallCountRange: 6...15,
-        smallRadiusRange: 5...10,
+        smallRadiusRange: 6.875...8.125, // 25% range size, centered on 7.5
         smallDistanceRange: 30...82.5,
         splashCountRange: 0...6,
         splashLengthRange: 20...60,
@@ -56,7 +56,7 @@ struct Splat: Identifiable, Equatable {
     static func generate(center: CGPoint, params: Parameters = Splat.params) -> Splat {
         var dots: [SplatDot] = []
         // 1 large central dot
-        let centralRadius = CGFloat.random(in: params.centralRadiusRange)
+        let centralRadius = CGFloat.random(in: params.centralRadiusRange) / 10.0
         dots.append(SplatDot(
             position: center,
             size: CGSize(width: centralRadius * 2, height: centralRadius * 2),
@@ -68,7 +68,7 @@ struct Splat: Identifiable, Equatable {
         for _ in 0..<largeCount {
             let angle = CGFloat.random(in: 0..<(2 * .pi))
             let dist = CGFloat.random(in: params.largeDistanceRange)
-            let radius = CGFloat.random(in: params.largeRadiusRange)
+            let radius = CGFloat.random(in: params.largeRadiusRange) / 10.0
             let pos = CGPoint(
                 x: center.x + cos(angle) * dist,
                 y: center.y + sin(angle) * dist
@@ -85,7 +85,7 @@ struct Splat: Identifiable, Equatable {
         for _ in 0..<mediumCount {
             let angle = CGFloat.random(in: 0..<(2 * .pi))
             let dist = CGFloat.random(in: params.mediumDistanceRange)
-            let radius = CGFloat.random(in: params.mediumRadiusRange)
+            let radius = CGFloat.random(in: params.mediumRadiusRange) / 10.0
             let pos = CGPoint(
                 x: center.x + cos(angle) * dist,
                 y: center.y + sin(angle) * dist
@@ -102,7 +102,7 @@ struct Splat: Identifiable, Equatable {
         for _ in 0..<smallCount {
             let angle = CGFloat.random(in: 0..<(2 * .pi))
             let dist = CGFloat.random(in: params.smallDistanceRange)
-            let radius = CGFloat.random(in: params.smallRadiusRange)
+            let radius = CGFloat.random(in: params.smallRadiusRange) / 10.0
             let pos = CGPoint(
                 x: center.x + cos(angle) * dist,
                 y: center.y + sin(angle) * dist
@@ -286,14 +286,18 @@ struct MetalOverlayView: UIViewRepresentable {
                                       constant float* radii [[buffer(3)]],
                                       constant float& aspect [[buffer(4)]]) {
             float2 uv = in.uv;
-            float alpha = 0.0;
+            float field = 0.0;
             for (uint i = 0; i < 512; ++i) {
                 float2 center = float2(xs[i], ys[i]);
                 float2 aspect_uv = float2((uv.x - center.x) * aspect, uv.y - center.y);
                 float radius = radii[i] / 200.0;
                 float dist = length(aspect_uv);
-                alpha = max(alpha, smoothstep(radius, radius - 0.01, dist));
+                // Metaball field: f = (r^2) / (d^2 + eps)
+                field += (radius * radius) / (dist * dist + 1e-4);
             }
+            // Threshold for metaball surface
+            float threshold = 0.8;
+            float alpha = smoothstep(threshold, threshold + 0.15, field);
             return float4(0.2, 0.4, 1.0, alpha);
         }
         """
