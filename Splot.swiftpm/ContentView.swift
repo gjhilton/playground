@@ -1,69 +1,22 @@
+// v4k
 import SwiftUI
 import AVFoundation
+import MetalKit
+import simd
 
-struct ContentView: View {
-    @State private var audioPlayer: AVAudioPlayer?
-    @State private var splats: [Splat] = []
-    
-    var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                Color.white.ignoresSafeArea()
-                VStack(spacing: 24) {
-                    Button("Button 1") {
-                        playAlertSound()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .font(.title2)
-                    Button("Button 2") {
-                        playAlertSound()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .font(.title2)
-                }
-                // Visualize splats as blue dots/ellipses
-                ForEach(splats) { splat in
-                    ForEach(splat.dots) { dot in
-                        if dot.isEllipse {
-                            Ellipse()
-                                .fill(Color.blue.opacity(1))
-                                .frame(width: dot.size.width, height: dot.size.height)
-                                .position(dot.position)
-                                .rotationEffect(.degrees(dot.rotation))
-                        } else {
-                            Circle()
-                                .fill(Color.blue.opacity(1))
-                                .frame(width: dot.size.width, height: dot.size.height)
-                                .position(dot.position)
-                        }
-                    }
-                }
-                // Transparent overlay to capture taps and add splats
-                Color.clear
-                    .contentShape(Rectangle())
-            }
-            .ignoresSafeArea()
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onEnded { value in
-                        let location = value.location
-                        splats.append(Splat.generate(center: location))
-                    }
-            )
-        }
-    }
-    
-    private func playAlertSound() {
-        guard let systemSoundID = SystemSoundID(exactly: 1005) else { return } // 1005 is a standard alert sound
-        AudioServicesPlaySystemSound(systemSoundID)
-    }
+struct SplatDot: Identifiable {
+    let id: UUID = UUID()
+    let position: CGPoint
+    let size: CGSize
+    let isEllipse: Bool
+    let rotation: Double
 }
 
 struct Splat: Identifiable {
     let id: UUID = UUID()
     let center: CGPoint
     let dots: [SplatDot]
-    
+
     struct Parameters {
         let centralRadiusRange: ClosedRange<CGFloat>
         let largeCountRange: ClosedRange<Int>
@@ -190,10 +143,161 @@ struct Splat: Identifiable {
     }
 }
 
-struct SplatDot: Identifiable {
-    let id: UUID = UUID()
-    let position: CGPoint
-    let size: CGSize
-    let isEllipse: Bool
-    let rotation: Double
+struct ContentView: View {
+    @State private var audioPlayer: AVAudioPlayer?
+    @State private var splats: [Splat] = []
+
+    var allSplatDots: [SplatDot] {
+        splats.flatMap { $0.dots }
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Color.white.ignoresSafeArea()
+                VStack(spacing: 24) {
+                    Button("Button 1") {
+                        playAlertSound()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .font(.title2)
+                    Button("Button 2") {
+                        playAlertSound()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .font(.title2)
+                }
+                // Visualize splats as blue dots/ellipses
+                ForEach(splats) { splat in
+                    ForEach(splat.dots) { dot in
+                        if dot.isEllipse {
+                            Ellipse()
+                                .fill(Color.blue.opacity(1))
+                                .frame(width: dot.size.width, height: dot.size.height)
+                                .position(dot.position)
+                                .rotationEffect(.degrees(dot.rotation))
+                        } else {
+                            Circle()
+                                .fill(Color.blue.opacity(1))
+                                .frame(width: dot.size.width, height: dot.size.height)
+                                .position(dot.position)
+                        }
+                    }
+                }
+                // Transparent overlay to capture taps and add splats
+                Color.clear
+                    .contentShape(Rectangle())
+                // Metal overlay ON TOP, does not block touches
+                MetalOverlayView(splatDots: allSplatDots)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
+            .ignoresSafeArea()
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onEnded { value in
+                        let location = value.location
+                        splats.append(Splat.generate(center: location))
+                    }
+            )
+        }
+    }
+
+    private func playAlertSound() {
+        guard let systemSoundID = SystemSoundID(exactly: 1005) else { return }
+        AudioServicesPlaySystemSound(systemSoundID)
+    }
+}
+
+struct MetalOverlayView: UIViewRepresentable {
+    let splatDots: [SplatDot]
+    func makeUIView(context: Context) -> MTKView {
+        let device = MTLCreateSystemDefaultDevice()!
+        let mtkView = MTKView(frame: .zero, device: device)
+        mtkView.clearColor = MTLClearColorMake(0, 0, 0, 0) // fully transparent
+        mtkView.isOpaque = false
+        mtkView.backgroundColor = .clear
+        mtkView.framebufferOnly = true
+        mtkView.enableSetNeedsDisplay = true
+        mtkView.isPaused = true
+        mtkView.delegate = context.coordinator
+        mtkView.setNeedsDisplay()
+        return mtkView
+    }
+    func updateUIView(_ uiView: MTKView, context: Context) {
+        uiView.setNeedsDisplay()
+    }
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+    class Coordinator: NSObject, MTKViewDelegate {
+        private var pipelineState: MTLRenderPipelineState?
+        private var commandQueue: MTLCommandQueue?
+        private let circleSegments = 40
+        private let metalSource = """
+        using namespace metal;
+        struct Vertex {
+            float2 position [[attribute(0)]];
+        };
+        vertex float4 vertex_main(const device Vertex* vertices [[buffer(0)]], uint vid [[vertex_id]]) {
+            return float4(vertices[vid].position, 0.0, 1.0);
+        }
+        fragment float4 fragment_main() {
+            return float4(0.0, 0.4, 1.0, 0.7); // Blue
+        }
+        """
+        func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
+        func draw(in view: MTKView) {
+            guard let drawable = view.currentDrawable,
+                  let descriptor = view.currentRenderPassDescriptor else { return }
+            let device = view.device!
+            if pipelineState == nil {
+                let library = try! device.makeLibrary(source: metalSource, options: nil)
+                let vertexFunc = library.makeFunction(name: "vertex_main")
+                let fragmentFunc = library.makeFunction(name: "fragment_main")
+                let pipelineDesc = MTLRenderPipelineDescriptor()
+                pipelineDesc.vertexFunction = vertexFunc
+                pipelineDesc.fragmentFunction = fragmentFunc
+                pipelineDesc.colorAttachments[0].pixelFormat = .bgra8Unorm
+                pipelineState = try! device.makeRenderPipelineState(descriptor: pipelineDesc)
+                commandQueue = device.makeCommandQueue()
+            }
+            let commandBuffer = commandQueue!.makeCommandBuffer()!
+            let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)!
+            encoder.setRenderPipelineState(pipelineState!)
+            // Draw a single circle at center of screen
+            let width = Float(view.bounds.width)
+            let height = Float(view.bounds.height)
+            let center = float2(0, 0) // NDC center
+            let radius: Float = 0.2 // NDC units (20% of min dimension)
+            var vertices: [float2] = []
+            for i in 0..<circleSegments {
+                let iDouble = Double(i)
+                let segmentsDouble = Double(circleSegments)
+                let angle1 = iDouble / segmentsDouble * 2.0 * Double.pi
+                let angle2 = (iDouble + 1.0) / segmentsDouble * 2.0 * Double.pi
+
+                let cos1 = cos(angle1)
+                let sin1 = sin(angle1)
+                let cos2 = cos(angle2)
+                let sin2 = sin(angle2)
+
+                let x1 = Float(cos1) * radius
+                let y1 = Float(sin1) * radius
+                let x2 = Float(cos2) * radius
+                let y2 = Float(sin2) * radius
+
+                let p0 = center
+                let p1 = float2(center.x + x1, center.y + y1)
+                let p2 = float2(center.x + x2, center.y + y2)
+                vertices.append(contentsOf: [p0, p1, p2])
+            }
+            let buffer = device.makeBuffer(bytes: vertices, length: vertices.count * MemoryLayout<float2>.stride, options: [])
+            encoder.setVertexBuffer(buffer, offset: 0, index: 0)
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices.count)
+            encoder.endEncoding()
+            commandBuffer.present(drawable)
+            commandBuffer.commit()
+        }
+    }
 }
