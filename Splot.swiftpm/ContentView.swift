@@ -1,4 +1,4 @@
-// Version: 80
+// Version: 81
 import SwiftUI
 import AVFoundation
 import MetalKit
@@ -36,7 +36,7 @@ struct Splat: Identifiable, Equatable {
     }
 
     static let params = Parameters(
-        centralRadiusRange: 30...50,
+        centralRadiusRange: 15...25, // halved from 30...50
         largeCountRange: 0...3,
         largeRadiusRange: 15...25,
         largeDistanceRange: 12.5...33.75,
@@ -56,7 +56,7 @@ struct Splat: Identifiable, Equatable {
     static func generate(center: CGPoint, params: Parameters = Splat.params) -> Splat {
         var dots: [SplatDot] = []
         // 1 large central dot
-        let centralRadius = CGFloat.random(in: params.centralRadiusRange) * 0.5
+        let centralRadius = CGFloat.random(in: params.centralRadiusRange)
         dots.append(SplatDot(
             position: center,
             size: CGSize(width: centralRadius * 2, height: centralRadius * 2),
