@@ -46,7 +46,7 @@ struct ContentView: View {
                 DragGesture(minimumDistance: 0)
                     .onEnded { value in
                         let location = value.location
-                        splats.append(Splat(center: location))
+                        splats.append(Splat.generate(center: location))
                     }
             )
         }
@@ -63,28 +63,46 @@ struct Splat: Identifiable {
     let center: CGPoint
     let dots: [SplatDot]
     
-    // MARK: - Splat Parameters
-    static let centralRadiusRange: ClosedRange<CGFloat> = 30...50
-    static let largeCountRange: ClosedRange<Int> = 0...3
-    static let largeRadiusRange: ClosedRange<CGFloat> = 15...25
-    static let largeDistanceRange: ClosedRange<CGFloat> = 12.5...33.75
-    static let mediumCountRange: ClosedRange<Int> = 3...9
-    static let mediumRadiusRange: ClosedRange<CGFloat> = 8...19
-    static let mediumDistanceRange: ClosedRange<CGFloat> = 40...70
-    static let smallCountRange: ClosedRange<Int> = 6...15
-    static let smallRadiusRange: ClosedRange<CGFloat> = 5...10
-    static let smallDistanceRange: ClosedRange<CGFloat> = 30...82.5
-    static let splashCountRange: ClosedRange<Int> = 0...6
-    static let splashLengthRange: ClosedRange<CGFloat> = 20...60
-    static let splashWidthRange: ClosedRange<CGFloat> = 10...30
-    static let splashDistanceRange: ClosedRange<CGFloat> = 40...70
-    static let splashRotationJitter: ClosedRange<Double> = -10...10
+    struct Parameters {
+        let centralRadiusRange: ClosedRange<CGFloat>
+        let largeCountRange: ClosedRange<Int>
+        let largeRadiusRange: ClosedRange<CGFloat>
+        let largeDistanceRange: ClosedRange<CGFloat>
+        let mediumCountRange: ClosedRange<Int>
+        let mediumRadiusRange: ClosedRange<CGFloat>
+        let mediumDistanceRange: ClosedRange<CGFloat>
+        let smallCountRange: ClosedRange<Int>
+        let smallRadiusRange: ClosedRange<CGFloat>
+        let smallDistanceRange: ClosedRange<CGFloat>
+        let splashCountRange: ClosedRange<Int>
+        let splashLengthRange: ClosedRange<CGFloat>
+        let splashWidthRange: ClosedRange<CGFloat>
+        let splashDistanceRange: ClosedRange<CGFloat>
+        let splashRotationJitter: ClosedRange<Double>
+    }
 
-    init(center: CGPoint) {
-        self.center = center
+    static let params = Parameters(
+        centralRadiusRange: 30...50,
+        largeCountRange: 0...3,
+        largeRadiusRange: 15...25,
+        largeDistanceRange: 12.5...33.75,
+        mediumCountRange: 3...9,
+        mediumRadiusRange: 8...19,
+        mediumDistanceRange: 40...70,
+        smallCountRange: 6...15,
+        smallRadiusRange: 5...10,
+        smallDistanceRange: 30...82.5,
+        splashCountRange: 0...6,
+        splashLengthRange: 20...60,
+        splashWidthRange: 10...30,
+        splashDistanceRange: 40...70,
+        splashRotationJitter: -10...10
+    )
+
+    static func generate(center: CGPoint, params: Parameters = Splat.params) -> Splat {
         var dots: [SplatDot] = []
         // 1 large central dot
-        let centralRadius = CGFloat.random(in: Splat.centralRadiusRange)
+        let centralRadius = CGFloat.random(in: params.centralRadiusRange)
         dots.append(SplatDot(
             position: center,
             size: CGSize(width: centralRadius * 2, height: centralRadius * 2),
@@ -92,11 +110,11 @@ struct Splat: Identifiable {
             rotation: 0
         ))
         // Large dots
-        let largeCount = Int.random(in: Splat.largeCountRange)
+        let largeCount = Int.random(in: params.largeCountRange)
         for _ in 0..<largeCount {
             let angle = CGFloat.random(in: 0..<(2 * .pi))
-            let dist = CGFloat.random(in: Splat.largeDistanceRange)
-            let radius = CGFloat.random(in: Splat.largeRadiusRange)
+            let dist = CGFloat.random(in: params.largeDistanceRange)
+            let radius = CGFloat.random(in: params.largeRadiusRange)
             let pos = CGPoint(
                 x: center.x + cos(angle) * dist,
                 y: center.y + sin(angle) * dist
@@ -109,11 +127,11 @@ struct Splat: Identifiable {
             ))
         }
         // Medium dots
-        let mediumCount = Int.random(in: Splat.mediumCountRange)
+        let mediumCount = Int.random(in: params.mediumCountRange)
         for _ in 0..<mediumCount {
             let angle = CGFloat.random(in: 0..<(2 * .pi))
-            let dist = CGFloat.random(in: Splat.mediumDistanceRange)
-            let radius = CGFloat.random(in: Splat.mediumRadiusRange)
+            let dist = CGFloat.random(in: params.mediumDistanceRange)
+            let radius = CGFloat.random(in: params.mediumRadiusRange)
             let pos = CGPoint(
                 x: center.x + cos(angle) * dist,
                 y: center.y + sin(angle) * dist
@@ -126,11 +144,11 @@ struct Splat: Identifiable {
             ))
         }
         // Small dots
-        let smallCount = Int.random(in: Splat.smallCountRange)
+        let smallCount = Int.random(in: params.smallCountRange)
         for _ in 0..<smallCount {
             let angle = CGFloat.random(in: 0..<(2 * .pi))
-            let dist = CGFloat.random(in: Splat.smallDistanceRange)
-            let radius = CGFloat.random(in: Splat.smallRadiusRange)
+            let dist = CGFloat.random(in: params.smallDistanceRange)
+            let radius = CGFloat.random(in: params.smallRadiusRange)
             let pos = CGPoint(
                 x: center.x + cos(angle) * dist,
                 y: center.y + sin(angle) * dist
@@ -143,18 +161,18 @@ struct Splat: Identifiable {
             ))
         }
         // Splashes (ellipses)
-        let splashCount = Int.random(in: Splat.splashCountRange)
+        let splashCount = Int.random(in: params.splashCountRange)
         for _ in 0..<splashCount {
             let angle = CGFloat.random(in: 0..<(2 * .pi))
-            let dist = CGFloat.random(in: Splat.splashDistanceRange)
-            let length = CGFloat.random(in: Splat.splashLengthRange)
-            let width = CGFloat.random(in: Splat.splashWidthRange)
+            let dist = CGFloat.random(in: params.splashDistanceRange)
+            let length = CGFloat.random(in: params.splashLengthRange)
+            let width = CGFloat.random(in: params.splashWidthRange)
             let pos = CGPoint(
                 x: center.x + cos(angle) * dist,
                 y: center.y + sin(angle) * dist
             )
             // Rotate so the ellipse points away from the center (radiates out)
-            let rotation = Double(angle * 180 / .pi) + Double.random(in: Splat.splashRotationJitter)
+            let rotation = Double(angle * 180 / .pi) + Double.random(in: params.splashRotationJitter)
             dots.append(SplatDot(
                 position: pos,
                 size: CGSize(width: width, height: length),
@@ -162,6 +180,11 @@ struct Splat: Identifiable {
                 rotation: rotation
             ))
         }
+        return Splat(center: center, dots: dots)
+    }
+
+    private init(center: CGPoint, dots: [SplatDot]) {
+        self.center = center
         self.dots = dots
     }
 }
