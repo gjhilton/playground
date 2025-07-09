@@ -8,6 +8,7 @@ struct ContentView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
+                Color.white.ignoresSafeArea()
                 VStack(spacing: 24) {
                     Button("Button 1") {
                         playAlertSound()
