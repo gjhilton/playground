@@ -1,4 +1,4 @@
-// Version: 88
+// Version: 89
 import SwiftUI
 import AVFoundation
 import MetalKit
@@ -39,17 +39,17 @@ struct Splat: Identifiable, Equatable {
         centralRadiusRange: 19.375...20.625, // 25% range size, centered on 20
         largeCountRange: 0...3,
         largeRadiusRange: 19.375...20.625, // 25% range size, centered on 20
-        largeDistanceRange: 12.5...33.75,
+        largeDistanceRange: 25.0...67.5, // doubled
         mediumCountRange: 3...9,
         mediumRadiusRange: 13.625...14.375, // 25% range size, centered on 14
-        mediumDistanceRange: 40...70,
+        mediumDistanceRange: 80.0...140.0, // doubled
         smallCountRange: 6...15,
         smallRadiusRange: 6.875...8.125, // 25% range size, centered on 7.5
-        smallDistanceRange: 30...82.5,
+        smallDistanceRange: 60.0...165.0, // doubled
         splashCountRange: 0...6,
         splashLengthRange: 20...60,
         splashWidthRange: 10...30,
-        splashDistanceRange: 40...70,
+        splashDistanceRange: 80.0...140.0, // doubled
         splashRotationJitter: -10...10
     )
 
