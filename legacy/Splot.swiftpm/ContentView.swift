@@ -1,4 +1,4 @@
-// Version: 95
+// Version: 104
 import SwiftUI
 import AVFoundation
 import MetalKit
@@ -164,6 +164,7 @@ struct ContentView: View {
         GeometryReader { geo in
             ZStack {
                 Color.white.ignoresSafeArea()
+                
                 VStack(spacing: 24) {
                     Button("Clear Splats") {
                         splats.removeAll()
@@ -173,6 +174,7 @@ struct ContentView: View {
                     .foregroundColor(.white)
                     .font(.title2)
                 }
+                
                 // Metal overlay composited with multiply blend mode
                 MetalOverlayView(xs: overlayDotXs, ys: overlayDotYs, radii: overlayDotRadii, splotColor: splotColor)
                     .ignoresSafeArea()
@@ -180,12 +182,6 @@ struct ContentView: View {
                     .blendMode(.multiply)
             }
             .ignoresSafeArea()
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 0)
-                    .onEnded { value in
-                        splats.append(Splat.generate(center: value.location))
-                    }
-            )
             .onChange(of: splats) { _ in
                 // Map all splat dots to normalized Metal overlay arrays
                 let width = geo.size.width
@@ -225,6 +221,7 @@ struct MetalOverlayView: UIViewRepresentable {
         mtkView.enableSetNeedsDisplay = true
         mtkView.isPaused = true
         mtkView.delegate = context.coordinator
+        mtkView.isUserInteractionEnabled = false
         mtkView.setNeedsDisplay()
         return mtkView
     }
