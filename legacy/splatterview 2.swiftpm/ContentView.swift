@@ -1,4 +1,4 @@
-// Version: 3.17
+// Version: 3.00
 import SwiftUI
 
 struct ContentView: View {
@@ -21,7 +21,7 @@ struct ContentView: View {
                         .foregroundColor(.white)
                         .font(.title2)
                         Spacer()
-                        Text("3.17")
+                        Text("3.00")
                             .font(.system(size: 36, weight: .regular, design: .default))
                             .foregroundColor(.black)
                             .padding(.bottom, 20)

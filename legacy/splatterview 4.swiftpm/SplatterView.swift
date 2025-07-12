@@ -1,4 +1,4 @@
-// Version: 3.17
+// Version: 3.08
 import SwiftUI
 import UIKit
 import MetalKit
@@ -86,388 +86,6 @@ class SeededRandomGenerator: RandomGenerator {
     }
 }
 
-// MARK: - JSON Configuration
-
-/// JSON-serializable settings structure for export/import
-struct SplatterSettings: Codable {
-    let splatterViewVersion: String
-    let rendering: RenderingSettings
-    let randomisation: RandomisationSettings
-    let dots: DotParameters
-    let layers: LayerSettings
-    
-    private enum CodingKeys: String, CodingKey {
-        case splatterViewVersion = "splatterView version"
-        case rendering
-        case randomisation
-        case dots
-        case layers
-    }
-    
-    struct RenderingSettings: Codable {
-        let influenceThreshold: Float
-    }
-    
-    struct RandomisationSettings: Codable {
-        let useSeededRNG: Bool
-        let rngSeed: UInt64
-    }
-    
-    struct DotParameters: Codable {
-        let central: CentralParams
-        let large: LargeParams
-        let medium: MediumParams
-        let small: SmallParams
-        
-        struct CentralParams: Codable {
-            let radiusMin: Float
-            let radiusMax: Float
-        }
-        
-        struct LargeParams: Codable {
-            let count: Int
-            let radiusMin: Float
-            let radiusMax: Float
-            let maxDistance: Float
-        }
-        
-        struct MediumParams: Codable {
-            let count: Int
-            let radiusMin: Float
-            let radiusMax: Float
-            let maxDistance: Float
-        }
-        
-        struct SmallParams: Codable {
-            let count: Int
-            let radiusMin: Float
-            let radiusMax: Float
-            let maxDistance: Float
-        }
-    }
-    
-    struct LayerSettings: Codable {
-        let background: PassSettings
-        let foreground: PassSettings
-        
-        struct PassSettings: Codable {
-            let enabled: Bool
-            let color: ColorRGB
-            let opacity: Float
-            let dotTypes: DotTypeSettings
-        }
-        
-        struct ColorRGB: Codable {
-            let r: Double
-            let g: Double
-            let b: Double
-        }
-        
-        struct DotTypeSettings: Codable {
-            let central: Bool
-            let large: Bool
-            let medium: Bool
-            let small: Bool
-        }
-    }
-}
-
-// MARK: - Settings Manager
-
-/// Centralized settings management for JSON import/export and default initialization
-class SettingsManager {
-    /// Default settings JSON - update this with exported settings to change defaults
-    private static let defaultSettingsJSON = """
-    {
-      "splatterView version": "3.11",
-      "rendering": {
-        "influenceThreshold": 0.001
-      },
-      "randomisation": {
-        "rngSeed": 12345,
-        "useSeededRNG": false
-      },
-      "dots": {
-        "central": {
-          "radiusMax": 0.3,
-          "radiusMin": 0.15
-        },
-        "large": {
-          "count": 25,
-          "maxDistance": 0.15,
-          "radiusMax": 0.08,
-          "radiusMin": 0.02
-        },
-        "medium": {
-          "count": 40,
-          "maxDistance": 0.2,
-          "radiusMax": 0.025,
-          "radiusMin": 0.005
-        },
-        "small": {
-          "count": 80,
-          "maxDistance": 0.35,
-          "radiusMax": 0.008,
-          "radiusMin": 0.001
-        }
-      },
-      "layers": {
-        "background": {
-          "color": {
-            "b": 0.1,
-            "g": 0.1,
-            "r": 0.8
-          },
-          "dotTypes": {
-            "central": true,
-            "large": true,
-            "medium": true,
-            "small": true
-          },
-          "enabled": true,
-          "opacity": 1
-        },
-        "foreground": {
-          "color": {
-            "b": 0.8,
-            "g": 0.5,
-            "r": 0.3
-          },
-          "dotTypes": {
-            "central": false,
-            "large": true,
-            "medium": true,
-            "small": false
-          },
-          "enabled": true,
-          "opacity": 0.6
-        }
-      }
-    }
-    """
-    
-    private static let _defaultSettings: SplatterSettings = {
-        guard let data = defaultSettingsJSON.data(using: .utf8),
-              let settings = try? JSONDecoder().decode(SplatterSettings.self, from: data) else {
-            fatalError("Invalid default settings JSON")
-        }
-        return settings
-    }()
-    
-    static var defaultSettings: SplatterSettings {
-        return _defaultSettings
-    }
-    
-    // MARK: - Factory Methods
-    
-    static func createCentralDotParams() -> CentralDotParams {
-        let params = CentralDotParams()
-        params.radiusMin = defaultSettings.dots.central.radiusMin
-        params.radiusMax = defaultSettings.dots.central.radiusMax
-        return params
-    }
-    
-    static func createLargeDotParams() -> LargeDotParams {
-        let params = LargeDotParams()
-        params.count = defaultSettings.dots.large.count
-        params.radiusMin = defaultSettings.dots.large.radiusMin
-        params.radiusMax = defaultSettings.dots.large.radiusMax
-        params.maxDistance = defaultSettings.dots.large.maxDistance
-        return params
-    }
-    
-    static func createMediumDotParams() -> MediumDotParams {
-        let params = MediumDotParams()
-        params.count = defaultSettings.dots.medium.count
-        params.radiusMin = defaultSettings.dots.medium.radiusMin
-        params.radiusMax = defaultSettings.dots.medium.radiusMax
-        params.maxDistance = defaultSettings.dots.medium.maxDistance
-        return params
-    }
-    
-    static func createSmallDotParams() -> SmallDotParams {
-        let params = SmallDotParams()
-        params.count = defaultSettings.dots.small.count
-        params.radiusMin = defaultSettings.dots.small.radiusMin
-        params.radiusMax = defaultSettings.dots.small.radiusMax
-        params.maxDistance = defaultSettings.dots.small.maxDistance
-        return params
-    }
-    
-    static func createRenderingParams() -> RenderingParams {
-        let params = RenderingParams()
-        let settings = defaultSettings
-        
-        params.influenceThreshold = settings.rendering.influenceThreshold
-        params.useSeededRNG = settings.randomisation.useSeededRNG
-        params.rngSeed = settings.randomisation.rngSeed
-        
-        params.backgroundPassEnabled = settings.layers.background.enabled
-        params.backgroundPassColor = colorFromRGB(settings.layers.background.color)
-        params.backgroundPassOpacity = settings.layers.background.opacity
-        params.backgroundCentralDot = settings.layers.background.dotTypes.central
-        params.backgroundLargeDots = settings.layers.background.dotTypes.large
-        params.backgroundMediumDots = settings.layers.background.dotTypes.medium
-        params.backgroundSmallDots = settings.layers.background.dotTypes.small
-        
-        params.foregroundPassEnabled = settings.layers.foreground.enabled
-        params.foregroundPassColor = colorFromRGB(settings.layers.foreground.color)
-        params.foregroundPassOpacity = settings.layers.foreground.opacity
-        params.foregroundCentralDot = settings.layers.foreground.dotTypes.central
-        params.foregroundLargeDots = settings.layers.foreground.dotTypes.large
-        params.foregroundMediumDots = settings.layers.foreground.dotTypes.medium
-        params.foregroundSmallDots = settings.layers.foreground.dotTypes.small
-        
-        return params
-    }
-    
-    // MARK: - Import/Export
-    
-    static func exportSettings(from viewModel: SplatterViewModel) -> String {
-        let settings = SplatterSettings(
-            splatterViewVersion: "3.17",
-            rendering: SplatterSettings.RenderingSettings(
-                influenceThreshold: viewModel.rendering.influenceThreshold
-            ),
-            randomisation: SplatterSettings.RandomisationSettings(
-                useSeededRNG: viewModel.rendering.useSeededRNG,
-                rngSeed: viewModel.rendering.rngSeed
-            ),
-            dots: SplatterSettings.DotParameters(
-                central: SplatterSettings.DotParameters.CentralParams(
-                    radiusMin: viewModel.centralDot.radiusMin,
-                    radiusMax: viewModel.centralDot.radiusMax
-                ),
-                large: SplatterSettings.DotParameters.LargeParams(
-                    count: viewModel.largeDots.count,
-                    radiusMin: viewModel.largeDots.radiusMin,
-                    radiusMax: viewModel.largeDots.radiusMax,
-                    maxDistance: viewModel.largeDots.maxDistance
-                ),
-                medium: SplatterSettings.DotParameters.MediumParams(
-                    count: viewModel.mediumDots.count,
-                    radiusMin: viewModel.mediumDots.radiusMin,
-                    radiusMax: viewModel.mediumDots.radiusMax,
-                    maxDistance: viewModel.mediumDots.maxDistance
-                ),
-                small: SplatterSettings.DotParameters.SmallParams(
-                    count: viewModel.smallDots.count,
-                    radiusMin: viewModel.smallDots.radiusMin,
-                    radiusMax: viewModel.smallDots.radiusMax,
-                    maxDistance: viewModel.smallDots.maxDistance
-                )
-            ),
-            layers: SplatterSettings.LayerSettings(
-                background: SplatterSettings.LayerSettings.PassSettings(
-                    enabled: viewModel.rendering.backgroundPassEnabled,
-                    color: rgbFromColor(viewModel.rendering.backgroundPassColor),
-                    opacity: viewModel.rendering.backgroundPassOpacity,
-                    dotTypes: SplatterSettings.LayerSettings.DotTypeSettings(
-                        central: viewModel.rendering.backgroundCentralDot,
-                        large: viewModel.rendering.backgroundLargeDots,
-                        medium: viewModel.rendering.backgroundMediumDots,
-                        small: viewModel.rendering.backgroundSmallDots
-                    )
-                ),
-                foreground: SplatterSettings.LayerSettings.PassSettings(
-                    enabled: viewModel.rendering.foregroundPassEnabled,
-                    color: rgbFromColor(viewModel.rendering.foregroundPassColor),
-                    opacity: viewModel.rendering.foregroundPassOpacity,
-                    dotTypes: SplatterSettings.LayerSettings.DotTypeSettings(
-                        central: viewModel.rendering.foregroundCentralDot,
-                        large: viewModel.rendering.foregroundLargeDots,
-                        medium: viewModel.rendering.foregroundMediumDots,
-                        small: viewModel.rendering.foregroundSmallDots
-                    )
-                )
-            )
-        )
-        
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        
-        do {
-            let data = try encoder.encode(settings)
-            return String(data: data, encoding: .utf8) ?? "Export failed"
-        } catch {
-            return "Export error: \(error.localizedDescription)"
-        }
-    }
-    
-    static func importSettings(json: String, to viewModel: SplatterViewModel) -> Bool {
-        guard let data = json.data(using: .utf8) else { return false }
-        
-        do {
-            let settings = try JSONDecoder().decode(SplatterSettings.self, from: data)
-            applySettings(settings, to: viewModel)
-            return true
-        } catch {
-            print("JSON import error: \(error)")
-            return false
-        }
-    }
-    
-    private static func applySettings(_ settings: SplatterSettings, to viewModel: SplatterViewModel) {
-        // Apply rendering settings
-        viewModel.rendering.influenceThreshold = settings.rendering.influenceThreshold
-        
-        // Apply randomisation settings
-        viewModel.rendering.useSeededRNG = settings.randomisation.useSeededRNG
-        viewModel.rendering.rngSeed = settings.randomisation.rngSeed
-        
-        // Apply dot parameters
-        viewModel.centralDot.radiusMin = settings.dots.central.radiusMin
-        viewModel.centralDot.radiusMax = settings.dots.central.radiusMax
-        
-        viewModel.largeDots.count = settings.dots.large.count
-        viewModel.largeDots.radiusMin = settings.dots.large.radiusMin
-        viewModel.largeDots.radiusMax = settings.dots.large.radiusMax
-        viewModel.largeDots.maxDistance = settings.dots.large.maxDistance
-        
-        viewModel.mediumDots.count = settings.dots.medium.count
-        viewModel.mediumDots.radiusMin = settings.dots.medium.radiusMin
-        viewModel.mediumDots.radiusMax = settings.dots.medium.radiusMax
-        viewModel.mediumDots.maxDistance = settings.dots.medium.maxDistance
-        
-        viewModel.smallDots.count = settings.dots.small.count
-        viewModel.smallDots.radiusMin = settings.dots.small.radiusMin
-        viewModel.smallDots.radiusMax = settings.dots.small.radiusMax
-        viewModel.smallDots.maxDistance = settings.dots.small.maxDistance
-        
-        // Apply layer settings
-        viewModel.rendering.backgroundPassEnabled = settings.layers.background.enabled
-        viewModel.rendering.backgroundPassColor = colorFromRGB(settings.layers.background.color)
-        viewModel.rendering.backgroundPassOpacity = settings.layers.background.opacity
-        viewModel.rendering.backgroundCentralDot = settings.layers.background.dotTypes.central
-        viewModel.rendering.backgroundLargeDots = settings.layers.background.dotTypes.large
-        viewModel.rendering.backgroundMediumDots = settings.layers.background.dotTypes.medium
-        viewModel.rendering.backgroundSmallDots = settings.layers.background.dotTypes.small
-        
-        viewModel.rendering.foregroundPassEnabled = settings.layers.foreground.enabled
-        viewModel.rendering.foregroundPassColor = colorFromRGB(settings.layers.foreground.color)
-        viewModel.rendering.foregroundPassOpacity = settings.layers.foreground.opacity
-        viewModel.rendering.foregroundCentralDot = settings.layers.foreground.dotTypes.central
-        viewModel.rendering.foregroundLargeDots = settings.layers.foreground.dotTypes.large
-        viewModel.rendering.foregroundMediumDots = settings.layers.foreground.dotTypes.medium
-        viewModel.rendering.foregroundSmallDots = settings.layers.foreground.dotTypes.small
-    }
-    
-    // MARK: - Utility Methods
-    
-    private static func colorFromRGB(_ rgb: SplatterSettings.LayerSettings.ColorRGB) -> Color {
-        Color(red: rgb.r, green: rgb.g, blue: rgb.b)
-    }
-    
-    private static func rgbFromColor(_ color: Color) -> SplatterSettings.LayerSettings.ColorRGB {
-        let simd = color.simd3
-        return SplatterSettings.LayerSettings.ColorRGB(
-            r: Double(simd.x),
-            g: Double(simd.y), 
-            b: Double(simd.z)
-        )
-    }
-}
-
 // MARK: - Data Structures
 
 /// Metal-compatible dot structure for efficient GPU transfer
@@ -475,15 +93,8 @@ class SettingsManager {
 struct MetalDot: Equatable, Hashable {
     var position: SIMD2<Float> // (x, y) in Metal coordinate space [0,1]
     var radius: Float // Normalized radius [0,1]
-    var type: Int32 // Dot type enum raw value [0-3]
+    var type: Int32 // Dot type enum raw value [0-4]
     
-    init(position: SIMD2<Float>, radius: Float, type: DotType) {
-        self.position = position
-        self.radius = radius
-        self.type = type.rawValue
-    }
-    
-    // Legacy initializer for backward compatibility
     init(position: SIMD2<Float>, radius: Float, type: Int32) {
         self.position = position
         self.radius = radius
@@ -508,6 +119,7 @@ class CentralDotParams: ObservableObject {
     @Published var enabled: Bool = true
     @Published var radiusMin: Float = 0.15
     @Published var radiusMax: Float = 0.3
+    @Published var colorVariation: Float = 0.15
 }
 
 /// Large satellite dot configuration for primary splat features
@@ -517,6 +129,7 @@ class LargeDotParams: ObservableObject {
     @Published var radiusMin: Float = 0.02
     @Published var radiusMax: Float = 0.08
     @Published var maxDistance: Float = 0.15
+    @Published var colorVariation: Float = 0.25
 }
 
 /// Medium satellite dot configuration for secondary splat features
@@ -526,6 +139,7 @@ class MediumDotParams: ObservableObject {
     @Published var radiusMin: Float = 0.005
     @Published var radiusMax: Float = 0.025
     @Published var maxDistance: Float = 0.2
+    @Published var colorVariation: Float = 0.4
 }
 
 /// Small satellite dot configuration for fine detail features
@@ -535,6 +149,7 @@ class SmallDotParams: ObservableObject {
     @Published var radiusMin: Float = 0.001
     @Published var radiusMax: Float = 0.008
     @Published var maxDistance: Float = 0.35
+    @Published var colorVariation: Float = 0.6
 }
 
 /// High-performance rendering configuration
@@ -564,22 +179,18 @@ class RenderingParams: ObservableObject {
 
 // MARK: - Performance Monitoring
 
-/// Performance metrics tracking for Metal rendering optimization with buffer pool monitoring
+/// Performance metrics tracking for Metal rendering optimization
 class PerformanceMonitor: ObservableObject {
     @Published var frameTime: TimeInterval = 0.0
     @Published var renderTime: TimeInterval = 0.0
     @Published var droppedFrames: Int = 0
     @Published var metalUtilization: Double = 0.0
-    @Published var bufferPoolHitRate: Double = 0.0
-    @Published var bufferPoolMemoryUsage: Int = 0
-    @Published var memoryPressureLevel: MemoryPressureLevel = .normal
     
     private static var shared = PerformanceMonitor()
     private var displayLink: CADisplayLink?
     private var lastFrameTime: CFAbsoluteTime = 0
     private var frameCount: Int = 0
     private var renderStartTime: CFAbsoluteTime = 0
-    private weak var renderService: MetalRenderService?
     
     static func startDisplayTracking() {
         guard shared.displayLink == nil else { return }
@@ -598,7 +209,7 @@ class PerformanceMonitor: ObservableObject {
         let currentTime = CFAbsoluteTimeGetCurrent()
         if lastFrameTime > 0 {
             frameTime = currentTime - lastFrameTime
-            if frameTime > RenderingConstants.frameDropThreshold {
+            if frameTime > 1.0/50.0 { // Dropped if slower than 50fps
                 droppedFrames += 1
             }
         }
@@ -614,31 +225,6 @@ class PerformanceMonitor: ObservableObject {
         let renderEndTime = CFAbsoluteTimeGetCurrent()
         shared.renderTime = renderEndTime - shared.renderStartTime
     }
-    
-    static func setRenderService(_ service: MetalRenderService) {
-        shared.renderService = service
-    }
-    
-    static func updateBufferPoolMetrics() {
-        guard let metrics = shared.renderService?.getBufferPoolMetrics() else { return }
-        
-        DispatchQueue.main.async {
-            shared.bufferPoolHitRate = metrics.hitRate
-            shared.bufferPoolMemoryUsage = metrics.memoryFootprint
-            
-            // Simple memory pressure detection based on pool usage
-            let memoryMB = metrics.memoryFootprint / (1024 * 1024)
-            if memoryMB > 100 {
-                shared.memoryPressureLevel = .critical
-                shared.renderService?.handleMemoryPressure(.critical)
-            } else if memoryMB > 50 {
-                shared.memoryPressureLevel = .warning
-                shared.renderService?.handleMemoryPressure(.warning)
-            } else {
-                shared.memoryPressureLevel = .normal
-            }
-        }
-    }
 }
 
 // MARK: - Constants
@@ -646,44 +232,17 @@ class PerformanceMonitor: ObservableObject {
 /// Centralized rendering constants for consistent behavior and easy tuning
 enum RenderingConstants {
     // UI and Build Configuration
-    static let showParameterControls: Bool = false
+    static let showParameterControls: Bool = true
     
     // Performance and caching settings
     static let enablePerformanceLogging: Bool = false
     static let reactiveUpdateDebounceMs: Int = 16 // ~60fps debouncing
-    static let frameDropThreshold: Double = 1.0/50.0 // Dropped if slower than 50fps
     
     // Metal rendering masks for selective dot rendering
     static let centralDotMask: UInt32 = 1 << 0
     static let largeDotMask: UInt32 = 1 << 1
     static let mediumDotMask: UInt32 = 1 << 2
     static let smallDotMask: UInt32 = 1 << 3
-    
-    // Shader rendering constants
-    static let spatialCullingMultiplier: Float = 2.0 // Skip dots beyond radius * multiplier
-    static let alphaThresholdLow: Float = 0.7 // Lower bound for alpha smoothstep
-    static let alphaThresholdHigh: Float = 1.0 // Upper bound for alpha smoothstep
-    
-    // Safety limits
-    static let maxSplatCount: Int = 10000 // Maximum number of splats to prevent memory issues
-    static let maxDotsPerSplat: Int = 500 // Maximum total dots per splat
-}
-
-/// Type-safe dot type enumeration for Metal rendering
-enum DotType: Int32, CaseIterable {
-    case central = 0
-    case large = 1
-    case medium = 2
-    case small = 3
-    
-    var mask: UInt32 {
-        switch self {
-        case .central: return RenderingConstants.centralDotMask
-        case .large: return RenderingConstants.largeDotMask
-        case .medium: return RenderingConstants.mediumDotMask
-        case .small: return RenderingConstants.smallDotMask
-        }
-    }
 }
 
 /// Render pass configuration for multi-pass rendering effects
@@ -704,12 +263,12 @@ class SplatterViewModel: ObservableObject {
     @Published var splatData: [MetalDot] = []
     @Published var metalData: MetalDotData = MetalDotData(dots: [], renderMask: 0)
     
-    // Parameter groups with reactive bindings - initialized from SettingsManager
-    @Published var centralDot = SettingsManager.createCentralDotParams()
-    @Published var largeDots = SettingsManager.createLargeDotParams()
-    @Published var mediumDots = SettingsManager.createMediumDotParams()
-    @Published var smallDots = SettingsManager.createSmallDotParams()
-    @Published var rendering = SettingsManager.createRenderingParams()
+    // Parameter groups with reactive bindings
+    @Published var centralDot = CentralDotParams()
+    @Published var largeDots = LargeDotParams()
+    @Published var mediumDots = MediumDotParams()
+    @Published var smallDots = SmallDotParams()
+    @Published var rendering = RenderingParams()
     
     // Cached computation state
     private var isDirty: Bool = true
@@ -766,12 +325,6 @@ class SplatterViewModel: ObservableObject {
     }
     
     func addSplat(at point: CGPoint, screenWidth: CGFloat, screenHeight: CGFloat) {
-        // Safety check: Prevent memory overflow
-        if splatData.count >= RenderingConstants.maxSplatCount {
-            print("Warning: Maximum splat count reached (\(RenderingConstants.maxSplatCount)). Ignoring new splat.")
-            return
-        }
-        
         let normalizedX = Float(point.x / screenWidth)
         let normalizedY = Float(point.y / screenHeight)
         let center = SIMD2<Float>(normalizedX, normalizedY)
@@ -781,96 +334,69 @@ class SplatterViewModel: ObservableObject {
             : DefaultRandomGenerator()
         
         var newDots: [MetalDot] = []
-        var totalNewDots = 0
-        
-        // Pre-calculate total dots to ensure we don't exceed limits
-        if centralDot.enabled { totalNewDots += 1 }
-        if largeDots.enabled { totalNewDots += largeDots.count }
-        if mediumDots.enabled { totalNewDots += mediumDots.count }
-        if smallDots.enabled { totalNewDots += smallDots.count }
-        
-        if totalNewDots > RenderingConstants.maxDotsPerSplat {
-            print("Warning: Splat would create \(totalNewDots) dots, exceeding limit of \(RenderingConstants.maxDotsPerSplat). Ignoring.")
-            return
-        }
         
         // Central dot
         if centralDot.enabled {
             let minRadius = min(centralDot.radiusMin, centralDot.radiusMax)
             let maxRadius = max(centralDot.radiusMin, centralDot.radiusMax)
             let radius = rng.float(in: minRadius...maxRadius)
-            newDots.append(MetalDot(position: center, radius: radius, type: .central))
+            newDots.append(MetalDot(position: center, radius: radius, type: 0))
         }
         
-        // Generate satellite dots using helper method
+        // Large satellite dots
         if largeDots.enabled {
-            newDots.append(contentsOf: generateSatelliteDots(
-                count: largeDots.count,
-                radiusMin: largeDots.radiusMin,
-                radiusMax: largeDots.radiusMax,
-                maxDistance: largeDots.maxDistance,
-                center: center,
-                type: .large,
-                rng: rng
-            ))
+            for _ in 0..<largeDots.count {
+                let angle = rng.float(in: 0...(2 * Float.pi))
+                let distance = rng.float(in: 0...largeDots.maxDistance)
+                let minRadius = min(largeDots.radiusMin, largeDots.radiusMax)
+                let maxRadius = max(largeDots.radiusMin, largeDots.radiusMax)
+                let radius = rng.float(in: minRadius...maxRadius)
+                
+                let offsetX = cos(angle) * distance
+                let offsetY = sin(angle) * distance
+                let position = SIMD2<Float>(center.x + offsetX, center.y + offsetY)
+                
+                newDots.append(MetalDot(position: position, radius: radius, type: 1))
+            }
         }
         
+        // Medium satellite dots
         if mediumDots.enabled {
-            newDots.append(contentsOf: generateSatelliteDots(
-                count: mediumDots.count,
-                radiusMin: mediumDots.radiusMin,
-                radiusMax: mediumDots.radiusMax,
-                maxDistance: mediumDots.maxDistance,
-                center: center,
-                type: .medium,
-                rng: rng
-            ))
+            for _ in 0..<mediumDots.count {
+                let angle = rng.float(in: 0...(2 * Float.pi))
+                let distance = rng.float(in: 0...mediumDots.maxDistance)
+                let minRadius = min(mediumDots.radiusMin, mediumDots.radiusMax)
+                let maxRadius = max(mediumDots.radiusMin, mediumDots.radiusMax)
+                let radius = rng.float(in: minRadius...maxRadius)
+                
+                let offsetX = cos(angle) * distance
+                let offsetY = sin(angle) * distance
+                let position = SIMD2<Float>(center.x + offsetX, center.y + offsetY)
+                
+                newDots.append(MetalDot(position: position, radius: radius, type: 2))
+            }
         }
         
+        // Small satellite dots
         if smallDots.enabled {
-            newDots.append(contentsOf: generateSatelliteDots(
-                count: smallDots.count,
-                radiusMin: smallDots.radiusMin,
-                radiusMax: smallDots.radiusMax,
-                maxDistance: smallDots.maxDistance,
-                center: center,
-                type: .small,
-                rng: rng
-            ))
+            for _ in 0..<smallDots.count {
+                let angle = rng.float(in: 0...(2 * Float.pi))
+                let distance = rng.float(in: 0...smallDots.maxDistance)
+                let minRadius = min(smallDots.radiusMin, smallDots.radiusMax)
+                let maxRadius = max(smallDots.radiusMin, smallDots.radiusMax)
+                let radius = rng.float(in: minRadius...maxRadius)
+                
+                let offsetX = cos(angle) * distance
+                let offsetY = sin(angle) * distance
+                let position = SIMD2<Float>(center.x + offsetX, center.y + offsetY)
+                
+                newDots.append(MetalDot(position: position, radius: radius, type: 3))
+            }
         }
         
         splatData.append(contentsOf: newDots)
         isDirty = true
         updateMetalData()
-    }
-    
-    /// Helper method to generate satellite dots with consistent logic
-    private func generateSatelliteDots(
-        count: Int,
-        radiusMin: Float,
-        radiusMax: Float,
-        maxDistance: Float,
-        center: SIMD2<Float>,
-        type: DotType,
-        rng: RandomGenerator
-    ) -> [MetalDot] {
-        var dots: [MetalDot] = []
-        
-        for _ in 0..<count {
-            let angle = rng.float(in: 0...(2 * Float.pi))
-            let distance = rng.float(in: 0...maxDistance)
-            let minRadius = min(radiusMin, radiusMax)
-            let maxRadius = max(radiusMin, radiusMax)
-            let radius = rng.float(in: minRadius...maxRadius)
-            
-            let offsetX = cos(angle) * distance
-            let offsetY = sin(angle) * distance
-            let position = SIMD2<Float>(center.x + offsetX, center.y + offsetY)
-            
-            dots.append(MetalDot(position: position, radius: radius, type: type))
-        }
-        
-        return dots
     }
     
     func clear() {
@@ -885,16 +411,6 @@ class SplatterViewModel: ObservableObject {
         let renderMask = computeRenderMask()
         metalData = MetalDotData(dots: splatData, renderMask: renderMask)
         isDirty = false
-    }
-    
-    // MARK: - Settings Export/Import (delegated to SettingsManager)
-    
-    func exportSettingsAsJSON() -> String {
-        return SettingsManager.exportSettings(from: self)
-    }
-    
-    func loadFromJSON(_ json: String) -> Bool {
-        return SettingsManager.importSettings(json: json, to: self)
     }
     
     private func setupReactiveBindings() {
@@ -969,7 +485,6 @@ struct SplatterView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             screenSize = UIScreen.main.bounds.size
             print("[DEBUG] SplatterView appeared - performance logging enabled: \(RenderingConstants.enablePerformanceLogging)")
@@ -1017,7 +532,7 @@ struct SplatterEditorView: View {
                         .foregroundColor(.white)
                         .font(.title2)
                         Spacer()
-                        Text("3.12")
+                        Text("3.00")
                             .font(.system(size: 36, weight: .regular, design: .default))
                             .foregroundColor(.black)
                             .padding(.bottom, 20)
@@ -1073,40 +588,16 @@ struct ParameterControlPanel: View {
         ScrollView {
             VStack(spacing: 12) {
                 // Header with clear button
-                VStack(spacing: 8) {
-                    HStack {
-                        Text("Ink Splatter Controls")
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                        Spacer()
-                        Button("Clear All") {
-                            viewModel.clear()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.red)
+                HStack {
+                    Text("Ink Splatter Controls")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Button("Clear All") {
+                        viewModel.clear()
                     }
-                    
-                    // Settings Export/Import
-                    HStack(spacing: 8) {
-                        Button("Export Settings") {
-                            let json = viewModel.exportSettingsAsJSON()
-                            UIPasteboard.general.string = json
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.blue)
-                        
-                        Button("Import Settings") {
-                            if let json = UIPasteboard.general.string {
-                                let success = viewModel.loadFromJSON(json)
-                                if !success {
-                                    print("Failed to import settings from clipboard")
-                                }
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.green)
-                    }
-                    .font(.caption)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
                 }
                 .padding(.bottom, 8)
                 
@@ -1419,7 +910,6 @@ struct MetalOverlayView: UIViewRepresentable {
         var influenceThreshold: Float
         let stateManager: MetalStateManager
         private let metalService: MetalRenderService
-        private var frameCount: Int = 0
         
         init(splatColor: SIMD3<Float>, influenceThreshold: Float) {
             self.splatColor = splatColor
@@ -1427,9 +917,6 @@ struct MetalOverlayView: UIViewRepresentable {
             self.stateManager = MetalStateManager()
             self.metalService = MetalRenderService()
             super.init()
-            
-            // Register render service with performance monitor
-            PerformanceMonitor.setRenderService(metalService)
         }
         
         func updateColor(_ newColor: SIMD3<Float>) {
@@ -1465,304 +952,12 @@ struct MetalOverlayView: UIViewRepresentable {
             
             PerformanceMonitor.endRenderTiming()
             
-            // Update buffer pool metrics every few frames
-            if frameCount % 60 == 0 { // Update metrics every 60 frames (~1 second at 60fps)
-                PerformanceMonitor.updateBufferPoolMetrics()
-            }
-            frameCount += 1
-            
             if RenderingConstants.enablePerformanceLogging {
                 let renderTime = CFAbsoluteTimeGetCurrent() - renderStartTime
                 print("[PERF] Metal render: \(String(format: "%.3f", renderTime * 1000))ms")
             }
         }
     }
-}
-
-// MARK: - Metal Buffer Pooling
-
-/// Buffer usage types for optimized pool management
-enum BufferUsage {
-    case vertex          // Fixed-size vertex data
-    case dots           // Variable-size dot data  
-    case uniforms       // Small uniform structures
-    case temporary      // Short-lived buffers
-    
-    var options: MTLResourceOptions {
-        switch self {
-        case .vertex:
-            return [.storageModeShared]
-        case .dots:
-            return [.storageModeShared]
-        case .uniforms:
-            return [.storageModeShared, .cpuCacheModeWriteCombined]
-        case .temporary:
-            return [.storageModePrivate]
-        }
-    }
-    
-    var maxPoolSize: Int {
-        switch self {
-        case .vertex: return 5      // Few, reused frequently
-        case .dots: return 10       // Variable sizes
-        case .uniforms: return 15   // Many, small, frequent
-        case .temporary: return 3   // Short-lived
-        }
-    }
-}
-
-/// RAII wrapper that automatically returns buffer to pool
-class PooledBuffer {
-    let buffer: MTLBuffer
-    private weak var pool: MetalBufferPool?
-    private var isReturned = false
-    
-    init(buffer: MTLBuffer, pool: MetalBufferPool) {
-        self.buffer = buffer
-        self.pool = pool
-    }
-    
-    deinit {
-        returnToPool()
-    }
-    
-    func returnToPool() {
-        guard !isReturned, let pool = pool else { return }
-        isReturned = true
-        pool.returnBuffer(self)
-    }
-}
-
-/// High-performance Metal buffer pool with size-based bucketing
-class MetalBufferPool {
-    private let device: MTLDevice
-    private var buckets: [BufferBucket] = []
-    private let maxPoolSize: Int
-    private let alignment: Int = 256 // Metal prefers 256-byte alignment
-    private let queue = DispatchQueue(label: "com.splatterview.buffer-pool", qos: .userInteractive)
-    
-    // Metrics tracking
-    private var totalAllocations: Int = 0
-    private var poolHits: Int = 0
-    private var poolMisses: Int = 0
-    
-    init(device: MTLDevice, maxPoolSize: Int = 20) {
-        self.device = device
-        self.maxPoolSize = maxPoolSize
-        // Initialize buckets array first
-        self.buckets = []
-        // Setup buckets with error handling
-        do {
-            try setupBucketsWithErrorHandling()
-        } catch {
-            print("Warning: Buffer pool initialization failed, falling back to direct allocation")
-        }
-    }
-    
-    /// Buffer bucket for specific size ranges
-    private class BufferBucket {
-        let sizeRange: ClosedRange<Int>
-        let usage: BufferUsage
-        private var availableBuffers: [MTLBuffer] = []
-        private var usedBuffers: Set<ObjectIdentifier> = []
-        private let maxCount: Int
-        
-        init(sizeRange: ClosedRange<Int>, usage: BufferUsage) {
-            self.sizeRange = sizeRange
-            self.usage = usage
-            self.maxCount = usage.maxPoolSize
-        }
-        
-        func borrow() -> MTLBuffer? {
-            return availableBuffers.popLast()
-        }
-        
-        func `return`(_ buffer: MTLBuffer) -> Bool {
-            let id = ObjectIdentifier(buffer)
-            
-            if availableBuffers.count < maxCount {
-                availableBuffers.append(buffer)
-                usedBuffers.insert(id)
-                return true
-            }
-            return false // Pool full, let buffer deallocate
-        }
-        
-        func canAccommodate(size: Int) -> Bool {
-            sizeRange.contains(size)
-        }
-        
-        func reduceCapacity(by factor: Double) {
-            let targetSize = Int(Double(maxCount) * (1.0 - factor))
-            while availableBuffers.count > targetSize {
-                _ = availableBuffers.popLast()
-            }
-        }
-        
-        var currentSize: Int { availableBuffers.count }
-        var memoryFootprint: Int { 
-            availableBuffers.reduce(0) { $0 + $1.length }
-        }
-    }
-    
-    private func setupBucketsWithErrorHandling() throws {
-        buckets = [
-            // Vertex buffers (typically small, fixed size)
-            BufferBucket(sizeRange: 0...1024, usage: .vertex),
-            
-            // Small dot counts (1-100 dots)
-            BufferBucket(sizeRange: 1025...4096, usage: .dots),
-            
-            // Medium dot counts (100-500 dots) 
-            BufferBucket(sizeRange: 4097...16384, usage: .dots),
-            
-            // Large dot counts (500-2000 dots) - reduced for playground
-            BufferBucket(sizeRange: 16385...32768, usage: .dots),
-            
-            // Uniform buffers (small, frequent)
-            BufferBucket(sizeRange: 0...512, usage: .uniforms)
-        ]
-    }
-    
-    func borrowBuffer(size: Int, usage: BufferUsage) -> PooledBuffer? {
-        return queue.sync {
-            let alignedSize = alignSize(size)
-            totalAllocations += 1
-            
-            // Find appropriate bucket
-            guard let bucket = findBucket(for: alignedSize, usage: usage) else {
-                poolMisses += 1
-                return createNewBuffer(size: alignedSize, usage: usage)
-            }
-            
-            // Try to get existing buffer
-            if let buffer = bucket.borrow() {
-                poolHits += 1
-                return PooledBuffer(buffer: buffer, pool: self)
-            }
-            
-            // Create new buffer for this bucket
-            poolMisses += 1
-            return createNewBuffer(size: alignedSize, usage: usage)
-        }
-    }
-    
-    func returnBuffer(_ pooledBuffer: PooledBuffer) {
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            
-            let buffer = pooledBuffer.buffer
-            let size = buffer.length
-            
-            // Find appropriate bucket and return
-            if let bucket = self.findBucket(for: size, usage: self.inferUsage(buffer)) {
-                _ = bucket.return(buffer)
-            }
-        }
-    }
-    
-    private func alignSize(_ size: Int) -> Int {
-        return ((size + alignment - 1) / alignment) * alignment
-    }
-    
-    private func findBucket(for size: Int, usage: BufferUsage) -> BufferBucket? {
-        return buckets.first { bucket in
-            bucket.canAccommodate(size: size) && bucket.usage == usage
-        }
-    }
-    
-    private func createNewBuffer(size: Int, usage: BufferUsage) -> PooledBuffer? {
-        guard let buffer = device.makeBuffer(length: size, options: usage.options) else {
-            return nil
-        }
-        return PooledBuffer(buffer: buffer, pool: self)
-    }
-    
-    private func inferUsage(_ buffer: MTLBuffer) -> BufferUsage {
-        // Simple heuristic based on buffer size
-        let size = buffer.length
-        switch size {
-        case 0...512: return .uniforms
-        case 513...1024: return .vertex
-        default: return .dots
-        }
-    }
-    
-    // MARK: - Pool Management
-    
-    func prewarmBuffers() {
-        // Conservative prewarming for playground environment
-        let commonSizes = [256, 1024]  // Only smallest common sizes
-        
-        for size in commonSizes {
-            for usage in [BufferUsage.uniforms] {  // Only uniforms for minimal impact
-                if let buffer = borrowBuffer(size: size, usage: usage) {
-                    buffer.returnToPool()
-                }
-            }
-        }
-    }
-    
-    func clearAllPools() {
-        queue.sync {
-            buckets.forEach { bucket in
-                bucket.reduceCapacity(by: 1.0) // Clear completely
-            }
-        }
-    }
-    
-    func adaptToMemoryPressure(_ level: MemoryPressureLevel) {
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            
-            switch level {
-            case .normal:
-                break // Full pool size
-            case .warning:
-                self.buckets.forEach { $0.reduceCapacity(by: 0.5) }
-            case .critical:
-                self.clearAllPools()
-            }
-        }
-    }
-    
-    // MARK: - Metrics
-    
-    struct BufferPoolMetrics {
-        let hitRate: Double
-        let totalAllocations: Int
-        let currentPoolSize: Int
-        let memoryFootprint: Int
-        let bucketsStatus: [(range: String, count: Int, memory: Int)]
-    }
-    
-    func getMetrics() -> BufferPoolMetrics {
-        return queue.sync {
-            let hitRate = totalAllocations > 0 ? Double(poolHits) / Double(totalAllocations) : 0.0
-            let currentPoolSize = buckets.reduce(0) { $0 + $1.currentSize }
-            let memoryFootprint = buckets.reduce(0) { $0 + $1.memoryFootprint }
-            
-            let bucketsStatus = buckets.map { bucket in
-                (
-                    range: "\(bucket.sizeRange.lowerBound)-\(bucket.sizeRange.upperBound)",
-                    count: bucket.currentSize,
-                    memory: bucket.memoryFootprint
-                )
-            }
-            
-            return BufferPoolMetrics(
-                hitRate: hitRate,
-                totalAllocations: totalAllocations,
-                currentPoolSize: currentPoolSize,
-                memoryFootprint: memoryFootprint,
-                bucketsStatus: bucketsStatus
-            )
-        }
-    }
-}
-
-enum MemoryPressureLevel {
-    case normal, warning, critical
 }
 
 // MARK: - Metal Services
@@ -1799,39 +994,14 @@ class MetalStateManager {
     }
 }
 
-/// High-performance Metal rendering service with shader optimization and buffer pooling
+/// High-performance Metal rendering service with shader optimization
 class MetalRenderService {
     private var pipelineState: MTLRenderPipelineState?
     private var device: MTLDevice?
-    private var bufferPool: MetalBufferPool?
-    
-    // Cache for frequently reused buffers
-    private var cachedVertexBuffer: PooledBuffer?
-    private var fallbackVertexBuffer: MTLBuffer?  // Direct allocation fallback
     
     private func setupPipeline(device: MTLDevice) -> Bool {
         guard self.device !== device else { return pipelineState != nil }
         self.device = device
-        
-        // Temporarily disable buffer pooling for crash diagnosis
-        // bufferPool = MetalBufferPool(device: device, maxPoolSize: 10)
-        
-        // Pre-create and cache vertex buffer (it's always the same)
-        let vertices: [Float] = [
-            -1.0, -1.0, 0.0, 1.0,
-             1.0, -1.0, 1.0, 1.0,
-            -1.0,  1.0, 0.0, 0.0,
-             1.0,  1.0, 1.0, 0.0
-        ]
-        
-        let vertexDataSize = vertices.count * MemoryLayout<Float>.stride
-        
-        // Use direct allocation only for crash diagnosis
-        if let directBuffer = device.makeBuffer(bytes: vertices, length: vertexDataSize, options: [.storageModeShared]) {
-            fallbackVertexBuffer = directBuffer
-        }
-        
-        // Skip prewarming in playground environment to reduce memory pressure
         
         guard let library = try? device.makeLibrary(source: metalShaderSource, options: nil) else {
             print("Failed to create Metal library from shader source")
@@ -1881,40 +1051,21 @@ class MetalRenderService {
         
         renderEncoder.setRenderPipelineState(pipelineState)
         
-        // Use direct vertex buffer only
-        if let fallbackBuffer = fallbackVertexBuffer {
-            renderEncoder.setVertexBuffer(fallbackBuffer, offset: 0, index: 0)
-        } else {
-            print("Warning: No vertex buffer available")
-            return false
-        }
+        let vertices: [Float] = [
+            -1.0, -1.0, 0.0, 1.0,
+             1.0, -1.0, 1.0, 1.0,
+            -1.0,  1.0, 0.0, 0.0,
+             1.0,  1.0, 1.0, 0.0
+        ]
         
-        // Use direct allocation for dots buffer
-        let dotsDataSize = max(1, dots.count) * MemoryLayout<MetalDot>.stride
-        guard let dotsBuffer = device.makeBuffer(length: dotsDataSize, options: [.storageModeShared]) else {
-            renderEncoder.endEncoding()
-            print("Error: Failed to create dots buffer")
-            return false
-        }
+        let vertexBuffer = device.makeBuffer(bytes: vertices, length: vertices.count * MemoryLayout<Float>.stride, options: [])
+        renderEncoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
         
-        // Copy dot data efficiently
-        if !dots.isEmpty {
-            dotsBuffer.contents().copyMemory(
-                from: dots,
-                byteCount: dotsDataSize
-            )
-        }
+        // Create dots buffer
+        let dotsBuffer = device.makeBuffer(bytes: dots, length: max(1, dots.count) * MemoryLayout<MetalDot>.stride, options: [])
         renderEncoder.setFragmentBuffer(dotsBuffer, offset: 0, index: 0)
         
-        // Use direct allocation for uniforms buffer
-        let uniformsDataSize = MemoryLayout<FragmentUniforms>.stride
-        guard let uniformsBuffer = device.makeBuffer(length: uniformsDataSize, options: [.storageModeShared, .cpuCacheModeWriteCombined]) else {
-            renderEncoder.endEncoding()
-            print("Error: Failed to create uniforms buffer")
-            return false
-        }
-        
-        // Setup uniforms
+        // Fragment shader uniforms
         var uniforms = FragmentUniforms(
             splatColor: splatColor,
             dotCount: UInt32(dots.count),
@@ -1922,48 +1073,16 @@ class MetalRenderService {
             influenceThreshold: influenceThreshold,
             aspectRatio: aspectRatio
         )
-        
-        uniformsBuffer.contents().copyMemory(
-            from: &uniforms,
-            byteCount: MemoryLayout<FragmentUniforms>.stride
-        )
+        let uniformsBuffer = device.makeBuffer(bytes: &uniforms, length: MemoryLayout<FragmentUniforms>.stride, options: [])
         renderEncoder.setFragmentBuffer(uniformsBuffer, offset: 0, index: 1)
         
-        // Render
         renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         renderEncoder.endEncoding()
         
         commandBuffer.present(drawable)
         commandBuffer.commit()
         
-        // Buffer pooling disabled for crash diagnosis
-        
         return true
-    }
-    
-    // MARK: - Buffer Pool Monitoring
-    
-    private var lastMetricsLog: CFAbsoluteTime = 0
-    private let metricsLogInterval: CFAbsoluteTime = 5.0 // Log every 5 seconds
-    
-    private func logPoolMetrics() {
-        let currentTime = CFAbsoluteTimeGetCurrent()
-        guard currentTime - lastMetricsLog > metricsLogInterval else { return }
-        lastMetricsLog = currentTime
-        
-        if let metrics = bufferPool?.getMetrics() {
-            print("[BUFFER POOL] Hit rate: \(String(format: "%.1f", metrics.hitRate * 100))%, Allocations: \(metrics.totalAllocations), Pool size: \(metrics.currentPoolSize), Memory: \(metrics.memoryFootprint / 1024)KB")
-        }
-    }
-    
-    // MARK: - Memory Pressure Handling
-    
-    func handleMemoryPressure(_ level: MemoryPressureLevel) {
-        bufferPool?.adaptToMemoryPressure(level)
-    }
-    
-    func getBufferPoolMetrics() -> MetalBufferPool.BufferPoolMetrics? {
-        return bufferPool?.getMetrics()
     }
 }
 
@@ -2016,6 +1135,7 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
                              constant FragmentUniforms &uniforms [[buffer(1)]]) {
     float2 fragCoord = in.uv;
     float totalField = 0.0;
+    const float metalDistanceEpsilon = 1e-6;
     
     for (uint i = 0; i < uniforms.dotCount; i++) {
         MetalDot dot = dots[i];
@@ -2028,9 +1148,11 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
         
         float2 diff = fragCoord - dot.position;
         diff.x *= uniforms.aspectRatio; // Correct for aspect ratio
-        float distance = length(diff);
+        float distSq = length_squared(diff);
+        float radiusSq = dot.radius * dot.radius;
         
-        // Spatial culling - skip dots with negligible influence (using constant)
+        // Spatial culling - skip dots with negligible influence
+        float distance = sqrt(distSq);
         if (distance > dot.radius * 2.0) continue;
         
         // Smooth falloff from center to edge
@@ -2040,7 +1162,6 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
         totalField += influence;
     }
     
-    // Use constants for alpha thresholds
     float alpha = smoothstep(0.7, 1.0, totalField);
     return float4(uniforms.splatColor, alpha);
 }

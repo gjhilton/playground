@@ -1,4 +1,4 @@
-// Version: 3.17
+// Version: 3.11
 import SwiftUI
 import UIKit
 import MetalKit
@@ -325,7 +325,7 @@ class SettingsManager {
     
     static func exportSettings(from viewModel: SplatterViewModel) -> String {
         let settings = SplatterSettings(
-            splatterViewVersion: "3.17",
+            splatterViewVersion: "3.11",
             rendering: SplatterSettings.RenderingSettings(
                 influenceThreshold: viewModel.rendering.influenceThreshold
             ),
@@ -564,22 +564,18 @@ class RenderingParams: ObservableObject {
 
 // MARK: - Performance Monitoring
 
-/// Performance metrics tracking for Metal rendering optimization with buffer pool monitoring
+/// Performance metrics tracking for Metal rendering optimization
 class PerformanceMonitor: ObservableObject {
     @Published var frameTime: TimeInterval = 0.0
     @Published var renderTime: TimeInterval = 0.0
     @Published var droppedFrames: Int = 0
     @Published var metalUtilization: Double = 0.0
-    @Published var bufferPoolHitRate: Double = 0.0
-    @Published var bufferPoolMemoryUsage: Int = 0
-    @Published var memoryPressureLevel: MemoryPressureLevel = .normal
     
     private static var shared = PerformanceMonitor()
     private var displayLink: CADisplayLink?
     private var lastFrameTime: CFAbsoluteTime = 0
     private var frameCount: Int = 0
     private var renderStartTime: CFAbsoluteTime = 0
-    private weak var renderService: MetalRenderService?
     
     static func startDisplayTracking() {
         guard shared.displayLink == nil else { return }
@@ -614,31 +610,6 @@ class PerformanceMonitor: ObservableObject {
         let renderEndTime = CFAbsoluteTimeGetCurrent()
         shared.renderTime = renderEndTime - shared.renderStartTime
     }
-    
-    static func setRenderService(_ service: MetalRenderService) {
-        shared.renderService = service
-    }
-    
-    static func updateBufferPoolMetrics() {
-        guard let metrics = shared.renderService?.getBufferPoolMetrics() else { return }
-        
-        DispatchQueue.main.async {
-            shared.bufferPoolHitRate = metrics.hitRate
-            shared.bufferPoolMemoryUsage = metrics.memoryFootprint
-            
-            // Simple memory pressure detection based on pool usage
-            let memoryMB = metrics.memoryFootprint / (1024 * 1024)
-            if memoryMB > 100 {
-                shared.memoryPressureLevel = .critical
-                shared.renderService?.handleMemoryPressure(.critical)
-            } else if memoryMB > 50 {
-                shared.memoryPressureLevel = .warning
-                shared.renderService?.handleMemoryPressure(.warning)
-            } else {
-                shared.memoryPressureLevel = .normal
-            }
-        }
-    }
 }
 
 // MARK: - Constants
@@ -646,7 +617,7 @@ class PerformanceMonitor: ObservableObject {
 /// Centralized rendering constants for consistent behavior and easy tuning
 enum RenderingConstants {
     // UI and Build Configuration
-    static let showParameterControls: Bool = false
+    static let showParameterControls: Bool = true
     
     // Performance and caching settings
     static let enablePerformanceLogging: Bool = false
@@ -969,7 +940,6 @@ struct SplatterView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             screenSize = UIScreen.main.bounds.size
             print("[DEBUG] SplatterView appeared - performance logging enabled: \(RenderingConstants.enablePerformanceLogging)")
@@ -1017,7 +987,7 @@ struct SplatterEditorView: View {
                         .foregroundColor(.white)
                         .font(.title2)
                         Spacer()
-                        Text("3.12")
+                        Text("3.11")
                             .font(.system(size: 36, weight: .regular, design: .default))
                             .foregroundColor(.black)
                             .padding(.bottom, 20)
@@ -1419,7 +1389,6 @@ struct MetalOverlayView: UIViewRepresentable {
         var influenceThreshold: Float
         let stateManager: MetalStateManager
         private let metalService: MetalRenderService
-        private var frameCount: Int = 0
         
         init(splatColor: SIMD3<Float>, influenceThreshold: Float) {
             self.splatColor = splatColor
@@ -1427,9 +1396,6 @@ struct MetalOverlayView: UIViewRepresentable {
             self.stateManager = MetalStateManager()
             self.metalService = MetalRenderService()
             super.init()
-            
-            // Register render service with performance monitor
-            PerformanceMonitor.setRenderService(metalService)
         }
         
         func updateColor(_ newColor: SIMD3<Float>) {
@@ -1465,304 +1431,12 @@ struct MetalOverlayView: UIViewRepresentable {
             
             PerformanceMonitor.endRenderTiming()
             
-            // Update buffer pool metrics every few frames
-            if frameCount % 60 == 0 { // Update metrics every 60 frames (~1 second at 60fps)
-                PerformanceMonitor.updateBufferPoolMetrics()
-            }
-            frameCount += 1
-            
             if RenderingConstants.enablePerformanceLogging {
                 let renderTime = CFAbsoluteTimeGetCurrent() - renderStartTime
                 print("[PERF] Metal render: \(String(format: "%.3f", renderTime * 1000))ms")
             }
         }
     }
-}
-
-// MARK: - Metal Buffer Pooling
-
-/// Buffer usage types for optimized pool management
-enum BufferUsage {
-    case vertex          // Fixed-size vertex data
-    case dots           // Variable-size dot data  
-    case uniforms       // Small uniform structures
-    case temporary      // Short-lived buffers
-    
-    var options: MTLResourceOptions {
-        switch self {
-        case .vertex:
-            return [.storageModeShared]
-        case .dots:
-            return [.storageModeShared]
-        case .uniforms:
-            return [.storageModeShared, .cpuCacheModeWriteCombined]
-        case .temporary:
-            return [.storageModePrivate]
-        }
-    }
-    
-    var maxPoolSize: Int {
-        switch self {
-        case .vertex: return 5      // Few, reused frequently
-        case .dots: return 10       // Variable sizes
-        case .uniforms: return 15   // Many, small, frequent
-        case .temporary: return 3   // Short-lived
-        }
-    }
-}
-
-/// RAII wrapper that automatically returns buffer to pool
-class PooledBuffer {
-    let buffer: MTLBuffer
-    private weak var pool: MetalBufferPool?
-    private var isReturned = false
-    
-    init(buffer: MTLBuffer, pool: MetalBufferPool) {
-        self.buffer = buffer
-        self.pool = pool
-    }
-    
-    deinit {
-        returnToPool()
-    }
-    
-    func returnToPool() {
-        guard !isReturned, let pool = pool else { return }
-        isReturned = true
-        pool.returnBuffer(self)
-    }
-}
-
-/// High-performance Metal buffer pool with size-based bucketing
-class MetalBufferPool {
-    private let device: MTLDevice
-    private var buckets: [BufferBucket] = []
-    private let maxPoolSize: Int
-    private let alignment: Int = 256 // Metal prefers 256-byte alignment
-    private let queue = DispatchQueue(label: "com.splatterview.buffer-pool", qos: .userInteractive)
-    
-    // Metrics tracking
-    private var totalAllocations: Int = 0
-    private var poolHits: Int = 0
-    private var poolMisses: Int = 0
-    
-    init(device: MTLDevice, maxPoolSize: Int = 20) {
-        self.device = device
-        self.maxPoolSize = maxPoolSize
-        // Initialize buckets array first
-        self.buckets = []
-        // Setup buckets with error handling
-        do {
-            try setupBucketsWithErrorHandling()
-        } catch {
-            print("Warning: Buffer pool initialization failed, falling back to direct allocation")
-        }
-    }
-    
-    /// Buffer bucket for specific size ranges
-    private class BufferBucket {
-        let sizeRange: ClosedRange<Int>
-        let usage: BufferUsage
-        private var availableBuffers: [MTLBuffer] = []
-        private var usedBuffers: Set<ObjectIdentifier> = []
-        private let maxCount: Int
-        
-        init(sizeRange: ClosedRange<Int>, usage: BufferUsage) {
-            self.sizeRange = sizeRange
-            self.usage = usage
-            self.maxCount = usage.maxPoolSize
-        }
-        
-        func borrow() -> MTLBuffer? {
-            return availableBuffers.popLast()
-        }
-        
-        func `return`(_ buffer: MTLBuffer) -> Bool {
-            let id = ObjectIdentifier(buffer)
-            
-            if availableBuffers.count < maxCount {
-                availableBuffers.append(buffer)
-                usedBuffers.insert(id)
-                return true
-            }
-            return false // Pool full, let buffer deallocate
-        }
-        
-        func canAccommodate(size: Int) -> Bool {
-            sizeRange.contains(size)
-        }
-        
-        func reduceCapacity(by factor: Double) {
-            let targetSize = Int(Double(maxCount) * (1.0 - factor))
-            while availableBuffers.count > targetSize {
-                _ = availableBuffers.popLast()
-            }
-        }
-        
-        var currentSize: Int { availableBuffers.count }
-        var memoryFootprint: Int { 
-            availableBuffers.reduce(0) { $0 + $1.length }
-        }
-    }
-    
-    private func setupBucketsWithErrorHandling() throws {
-        buckets = [
-            // Vertex buffers (typically small, fixed size)
-            BufferBucket(sizeRange: 0...1024, usage: .vertex),
-            
-            // Small dot counts (1-100 dots)
-            BufferBucket(sizeRange: 1025...4096, usage: .dots),
-            
-            // Medium dot counts (100-500 dots) 
-            BufferBucket(sizeRange: 4097...16384, usage: .dots),
-            
-            // Large dot counts (500-2000 dots) - reduced for playground
-            BufferBucket(sizeRange: 16385...32768, usage: .dots),
-            
-            // Uniform buffers (small, frequent)
-            BufferBucket(sizeRange: 0...512, usage: .uniforms)
-        ]
-    }
-    
-    func borrowBuffer(size: Int, usage: BufferUsage) -> PooledBuffer? {
-        return queue.sync {
-            let alignedSize = alignSize(size)
-            totalAllocations += 1
-            
-            // Find appropriate bucket
-            guard let bucket = findBucket(for: alignedSize, usage: usage) else {
-                poolMisses += 1
-                return createNewBuffer(size: alignedSize, usage: usage)
-            }
-            
-            // Try to get existing buffer
-            if let buffer = bucket.borrow() {
-                poolHits += 1
-                return PooledBuffer(buffer: buffer, pool: self)
-            }
-            
-            // Create new buffer for this bucket
-            poolMisses += 1
-            return createNewBuffer(size: alignedSize, usage: usage)
-        }
-    }
-    
-    func returnBuffer(_ pooledBuffer: PooledBuffer) {
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            
-            let buffer = pooledBuffer.buffer
-            let size = buffer.length
-            
-            // Find appropriate bucket and return
-            if let bucket = self.findBucket(for: size, usage: self.inferUsage(buffer)) {
-                _ = bucket.return(buffer)
-            }
-        }
-    }
-    
-    private func alignSize(_ size: Int) -> Int {
-        return ((size + alignment - 1) / alignment) * alignment
-    }
-    
-    private func findBucket(for size: Int, usage: BufferUsage) -> BufferBucket? {
-        return buckets.first { bucket in
-            bucket.canAccommodate(size: size) && bucket.usage == usage
-        }
-    }
-    
-    private func createNewBuffer(size: Int, usage: BufferUsage) -> PooledBuffer? {
-        guard let buffer = device.makeBuffer(length: size, options: usage.options) else {
-            return nil
-        }
-        return PooledBuffer(buffer: buffer, pool: self)
-    }
-    
-    private func inferUsage(_ buffer: MTLBuffer) -> BufferUsage {
-        // Simple heuristic based on buffer size
-        let size = buffer.length
-        switch size {
-        case 0...512: return .uniforms
-        case 513...1024: return .vertex
-        default: return .dots
-        }
-    }
-    
-    // MARK: - Pool Management
-    
-    func prewarmBuffers() {
-        // Conservative prewarming for playground environment
-        let commonSizes = [256, 1024]  // Only smallest common sizes
-        
-        for size in commonSizes {
-            for usage in [BufferUsage.uniforms] {  // Only uniforms for minimal impact
-                if let buffer = borrowBuffer(size: size, usage: usage) {
-                    buffer.returnToPool()
-                }
-            }
-        }
-    }
-    
-    func clearAllPools() {
-        queue.sync {
-            buckets.forEach { bucket in
-                bucket.reduceCapacity(by: 1.0) // Clear completely
-            }
-        }
-    }
-    
-    func adaptToMemoryPressure(_ level: MemoryPressureLevel) {
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            
-            switch level {
-            case .normal:
-                break // Full pool size
-            case .warning:
-                self.buckets.forEach { $0.reduceCapacity(by: 0.5) }
-            case .critical:
-                self.clearAllPools()
-            }
-        }
-    }
-    
-    // MARK: - Metrics
-    
-    struct BufferPoolMetrics {
-        let hitRate: Double
-        let totalAllocations: Int
-        let currentPoolSize: Int
-        let memoryFootprint: Int
-        let bucketsStatus: [(range: String, count: Int, memory: Int)]
-    }
-    
-    func getMetrics() -> BufferPoolMetrics {
-        return queue.sync {
-            let hitRate = totalAllocations > 0 ? Double(poolHits) / Double(totalAllocations) : 0.0
-            let currentPoolSize = buckets.reduce(0) { $0 + $1.currentSize }
-            let memoryFootprint = buckets.reduce(0) { $0 + $1.memoryFootprint }
-            
-            let bucketsStatus = buckets.map { bucket in
-                (
-                    range: "\(bucket.sizeRange.lowerBound)-\(bucket.sizeRange.upperBound)",
-                    count: bucket.currentSize,
-                    memory: bucket.memoryFootprint
-                )
-            }
-            
-            return BufferPoolMetrics(
-                hitRate: hitRate,
-                totalAllocations: totalAllocations,
-                currentPoolSize: currentPoolSize,
-                memoryFootprint: memoryFootprint,
-                bucketsStatus: bucketsStatus
-            )
-        }
-    }
-}
-
-enum MemoryPressureLevel {
-    case normal, warning, critical
 }
 
 // MARK: - Metal Services
@@ -1799,39 +1473,14 @@ class MetalStateManager {
     }
 }
 
-/// High-performance Metal rendering service with shader optimization and buffer pooling
+/// High-performance Metal rendering service with shader optimization
 class MetalRenderService {
     private var pipelineState: MTLRenderPipelineState?
     private var device: MTLDevice?
-    private var bufferPool: MetalBufferPool?
-    
-    // Cache for frequently reused buffers
-    private var cachedVertexBuffer: PooledBuffer?
-    private var fallbackVertexBuffer: MTLBuffer?  // Direct allocation fallback
     
     private func setupPipeline(device: MTLDevice) -> Bool {
         guard self.device !== device else { return pipelineState != nil }
         self.device = device
-        
-        // Temporarily disable buffer pooling for crash diagnosis
-        // bufferPool = MetalBufferPool(device: device, maxPoolSize: 10)
-        
-        // Pre-create and cache vertex buffer (it's always the same)
-        let vertices: [Float] = [
-            -1.0, -1.0, 0.0, 1.0,
-             1.0, -1.0, 1.0, 1.0,
-            -1.0,  1.0, 0.0, 0.0,
-             1.0,  1.0, 1.0, 0.0
-        ]
-        
-        let vertexDataSize = vertices.count * MemoryLayout<Float>.stride
-        
-        // Use direct allocation only for crash diagnosis
-        if let directBuffer = device.makeBuffer(bytes: vertices, length: vertexDataSize, options: [.storageModeShared]) {
-            fallbackVertexBuffer = directBuffer
-        }
-        
-        // Skip prewarming in playground environment to reduce memory pressure
         
         guard let library = try? device.makeLibrary(source: metalShaderSource, options: nil) else {
             print("Failed to create Metal library from shader source")
@@ -1881,40 +1530,21 @@ class MetalRenderService {
         
         renderEncoder.setRenderPipelineState(pipelineState)
         
-        // Use direct vertex buffer only
-        if let fallbackBuffer = fallbackVertexBuffer {
-            renderEncoder.setVertexBuffer(fallbackBuffer, offset: 0, index: 0)
-        } else {
-            print("Warning: No vertex buffer available")
-            return false
-        }
+        let vertices: [Float] = [
+            -1.0, -1.0, 0.0, 1.0,
+             1.0, -1.0, 1.0, 1.0,
+            -1.0,  1.0, 0.0, 0.0,
+             1.0,  1.0, 1.0, 0.0
+        ]
         
-        // Use direct allocation for dots buffer
-        let dotsDataSize = max(1, dots.count) * MemoryLayout<MetalDot>.stride
-        guard let dotsBuffer = device.makeBuffer(length: dotsDataSize, options: [.storageModeShared]) else {
-            renderEncoder.endEncoding()
-            print("Error: Failed to create dots buffer")
-            return false
-        }
+        let vertexBuffer = device.makeBuffer(bytes: vertices, length: vertices.count * MemoryLayout<Float>.stride, options: [])
+        renderEncoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
         
-        // Copy dot data efficiently
-        if !dots.isEmpty {
-            dotsBuffer.contents().copyMemory(
-                from: dots,
-                byteCount: dotsDataSize
-            )
-        }
+        // Create dots buffer
+        let dotsBuffer = device.makeBuffer(bytes: dots, length: max(1, dots.count) * MemoryLayout<MetalDot>.stride, options: [])
         renderEncoder.setFragmentBuffer(dotsBuffer, offset: 0, index: 0)
         
-        // Use direct allocation for uniforms buffer
-        let uniformsDataSize = MemoryLayout<FragmentUniforms>.stride
-        guard let uniformsBuffer = device.makeBuffer(length: uniformsDataSize, options: [.storageModeShared, .cpuCacheModeWriteCombined]) else {
-            renderEncoder.endEncoding()
-            print("Error: Failed to create uniforms buffer")
-            return false
-        }
-        
-        // Setup uniforms
+        // Fragment shader uniforms
         var uniforms = FragmentUniforms(
             splatColor: splatColor,
             dotCount: UInt32(dots.count),
@@ -1922,48 +1552,16 @@ class MetalRenderService {
             influenceThreshold: influenceThreshold,
             aspectRatio: aspectRatio
         )
-        
-        uniformsBuffer.contents().copyMemory(
-            from: &uniforms,
-            byteCount: MemoryLayout<FragmentUniforms>.stride
-        )
+        let uniformsBuffer = device.makeBuffer(bytes: &uniforms, length: MemoryLayout<FragmentUniforms>.stride, options: [])
         renderEncoder.setFragmentBuffer(uniformsBuffer, offset: 0, index: 1)
         
-        // Render
         renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         renderEncoder.endEncoding()
         
         commandBuffer.present(drawable)
         commandBuffer.commit()
         
-        // Buffer pooling disabled for crash diagnosis
-        
         return true
-    }
-    
-    // MARK: - Buffer Pool Monitoring
-    
-    private var lastMetricsLog: CFAbsoluteTime = 0
-    private let metricsLogInterval: CFAbsoluteTime = 5.0 // Log every 5 seconds
-    
-    private func logPoolMetrics() {
-        let currentTime = CFAbsoluteTimeGetCurrent()
-        guard currentTime - lastMetricsLog > metricsLogInterval else { return }
-        lastMetricsLog = currentTime
-        
-        if let metrics = bufferPool?.getMetrics() {
-            print("[BUFFER POOL] Hit rate: \(String(format: "%.1f", metrics.hitRate * 100))%, Allocations: \(metrics.totalAllocations), Pool size: \(metrics.currentPoolSize), Memory: \(metrics.memoryFootprint / 1024)KB")
-        }
-    }
-    
-    // MARK: - Memory Pressure Handling
-    
-    func handleMemoryPressure(_ level: MemoryPressureLevel) {
-        bufferPool?.adaptToMemoryPressure(level)
-    }
-    
-    func getBufferPoolMetrics() -> MetalBufferPool.BufferPoolMetrics? {
-        return bufferPool?.getMetrics()
     }
 }
 

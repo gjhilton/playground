@@ -1,4 +1,4 @@
-// Version: 3.17
+// Version: 3.16
 import SwiftUI
 import UIKit
 import MetalKit
@@ -325,7 +325,7 @@ class SettingsManager {
     
     static func exportSettings(from viewModel: SplatterViewModel) -> String {
         let settings = SplatterSettings(
-            splatterViewVersion: "3.17",
+            splatterViewVersion: "3.16",
             rendering: SplatterSettings.RenderingSettings(
                 influenceThreshold: viewModel.rendering.influenceThreshold
             ),
