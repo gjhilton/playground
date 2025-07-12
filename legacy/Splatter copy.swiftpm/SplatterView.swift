@@ -1,11 +1,11 @@
-// Version: 104
+// Version: 2.18
 import SwiftUI
-import AVFoundation
 import MetalKit
 import simd
 
-// Maximum number of dots supported by the Metal overlay
-let SPLAT_DOT_LIMIT = 512
+enum RenderingConstants {
+    static let splatDotLimit = 512
+}
 
 struct SplatDot: Identifiable, Equatable {
     let id: UUID = UUID()
@@ -147,53 +147,63 @@ struct Splat: Identifiable, Equatable {
     }
 }
 
-struct ContentView: View {
-    @State private var audioPlayer: AVAudioPlayer?
-    @State private var splats: [Splat] = []
-    @State private var overlayDotXs: [Float] = Array(repeating: 0, count: SPLAT_DOT_LIMIT)
-    @State private var overlayDotYs: [Float] = Array(repeating: 0, count: SPLAT_DOT_LIMIT)
-    @State private var overlayDotRadii: [Float] = Array(repeating: 0, count: SPLAT_DOT_LIMIT)
-
-    // Flatten all splat dots for Metal overlay
+class SplatterViewModel: ObservableObject {
+    @Published var splats: [Splat] = []
+    @Published var overlayDotXs: [Float] = Array(repeating: 0, count: RenderingConstants.splatDotLimit)
+    @Published var overlayDotYs: [Float] = Array(repeating: 0, count: RenderingConstants.splatDotLimit)
+    @Published var overlayDotRadii: [Float] = Array(repeating: 0, count: RenderingConstants.splatDotLimit)
+    
     var allSplatDots: [SplatDot] {
         splats.flatMap { $0.dots }
     }
     var splotColor: SIMD3<Float> { Splat.params.splotColor }
+    
+    func addSplat(at location: CGPoint) {
+        print("👆 SplatterViewModel.addSplat(at:) called at \(location)")
+        splats.append(Splat.generate(center: location))
+        print("👆 SplatterViewModel.addSplat(at:) - splat added, count now: \(splats.count)")
+    }
+    
+    func clear() {
+        print("🧽 SplatterViewModel.clear() called")
+        splats.removeAll()
+        print("🧽 SplatterViewModel.clear() - splats cleared, count now: \(splats.count)")
+    }
+    
+    func updateMetalData(width: CGFloat, height: CGFloat) {
+        print("🔧 SplatterViewModel.updateMetalData() called with size: \(width) x \(height)")
+        let allDots = allSplatDots.prefix(RenderingConstants.splatDotLimit)
+        let xs = allDots.map { Float($0.position.x / width) } + Array(repeating: 0, count: max(0, RenderingConstants.splatDotLimit - allDots.count))
+        let ys = allDots.map { 1 - Float($0.position.y / height) } + Array(repeating: 0, count: max(0, RenderingConstants.splatDotLimit - allDots.count))
+        let radii = allDots.map { Float($0.size.width / 2) } + Array(repeating: 0, count: max(0, RenderingConstants.splatDotLimit - allDots.count))
+        overlayDotXs = xs
+        overlayDotYs = ys
+        overlayDotRadii = radii
+        print("🔧 SplatterViewModel.updateMetalData() - Metal data updated")
+    }
+}
 
+struct SplatterView: View {
+    @StateObject private var viewModel = SplatterViewModel()
+    
     var body: some View {
         GeometryReader { geo in
-            ZStack {
-                Color.white.ignoresSafeArea()
-                
-                VStack(spacing: 24) {
-                    Button("Clear Splats") {
-                        splats.removeAll()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.black)
-                    .foregroundColor(.white)
-                    .font(.title2)
+            MetalOverlayView(xs: viewModel.overlayDotXs, ys: viewModel.overlayDotYs, radii: viewModel.overlayDotRadii, splotColor: viewModel.splotColor)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .blendMode(.multiply)
+                .onChange(of: viewModel.splats) {
+                    print("🔄 SplatterView.onChange(of: splats) triggered")
+                    viewModel.updateMetalData(width: geo.size.width, height: geo.size.height)
                 }
-                
-                // Metal overlay composited with multiply blend mode
-                MetalOverlayView(xs: overlayDotXs, ys: overlayDotYs, radii: overlayDotRadii, splotColor: splotColor)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
-                    .blendMode(.multiply)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("SplatterAddSplat"))) { notification in
+            if let location = notification.object as? CGPoint {
+                viewModel.addSplat(at: location)
             }
-            .ignoresSafeArea()
-            .onChange(of: splats) { _ in
-                // Map all splat dots to normalized Metal overlay arrays
-                let width = geo.size.width
-                let height = geo.size.height
-                let allDots = allSplatDots.prefix(SPLAT_DOT_LIMIT)
-                let xs = allDots.map { Float($0.position.x / width) } + Array(repeating: 0, count: max(0, SPLAT_DOT_LIMIT - allDots.count))
-                let ys = allDots.map { 1 - Float($0.position.y / height) } + Array(repeating: 0, count: max(0, SPLAT_DOT_LIMIT - allDots.count))
-                let radii = allDots.map { Float($0.size.width / 2) } + Array(repeating: 0, count: max(0, SPLAT_DOT_LIMIT - allDots.count))
-                overlayDotXs = xs
-                overlayDotYs = ys
-                overlayDotRadii = radii
-            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("SplatterClear"))) { _ in
+            viewModel.clear()
         }
     }
 }
@@ -221,16 +231,14 @@ struct MetalOverlayView: UIViewRepresentable {
         mtkView.enableSetNeedsDisplay = true
         mtkView.isPaused = true
         mtkView.delegate = context.coordinator
-        mtkView.isUserInteractionEnabled = false
         mtkView.setNeedsDisplay()
         return mtkView
     }
     func updateUIView(_ uiView: MTKView, context: Context) {
-        if let coordinator = context.coordinator as? Coordinator {
-            coordinator.xs = xs
-            coordinator.ys = ys
-            coordinator.radii = radii
-        }
+        let coordinator = context.coordinator
+        coordinator.xs = xs
+        coordinator.ys = ys
+        coordinator.radii = radii
         uiView.setNeedsDisplay()
     }
     func makeCoordinator() -> Coordinator {
@@ -238,9 +246,9 @@ struct MetalOverlayView: UIViewRepresentable {
     }
     class Coordinator: NSObject, MTKViewDelegate {
         let splotColor: SIMD3<Float>
-        var xs: [Float] = Array(repeating: 0, count: SPLAT_DOT_LIMIT)
-        var ys: [Float] = Array(repeating: 0, count: SPLAT_DOT_LIMIT)
-        var radii: [Float] = Array(repeating: 0, count: SPLAT_DOT_LIMIT)
+        var xs: [Float] = Array(repeating: 0, count: RenderingConstants.splatDotLimit)
+        var ys: [Float] = Array(repeating: 0, count: RenderingConstants.splatDotLimit)
+        var radii: [Float] = Array(repeating: 0, count: RenderingConstants.splatDotLimit)
         private var pipelineState: MTLRenderPipelineState?
         private var commandQueue: MTLCommandQueue?
         private let metalSource: String
@@ -249,7 +257,7 @@ struct MetalOverlayView: UIViewRepresentable {
             // Metal shader source with SPLAT_DOT_LIMIT
             self.metalSource = """
             using namespace metal;
-            #define SPLAT_DOT_LIMIT \(SPLAT_DOT_LIMIT)
+            #define SPLAT_DOT_LIMIT \(RenderingConstants.splatDotLimit)
             struct Vertex {
                 float2 position [[attribute(0)]];
             };
@@ -278,7 +286,7 @@ struct MetalOverlayView: UIViewRepresentable {
                     float dist = length(aspect_uv);
                     field += (radius * radius) / (dist * dist + 1e-4);
                 }
-                float threshold = 0.99;
+                float threshold = 0.8;
                 float alpha = smoothstep(threshold, threshold + 0.15, field);
                 return float4(splotColor, alpha);
             }
@@ -303,7 +311,7 @@ struct MetalOverlayView: UIViewRepresentable {
             let quadBuffer = view.device!.makeBuffer(bytes: quadVertices, length: MemoryLayout<SIMD2<Float>>.stride * quadVertices.count, options: [])
             if pipelineState == nil {
                 // Inject SPLAT_DOT_LIMIT into Metal source
-                let source = metalSource.replacingOccurrences(of: "\\(SPLAT_DOT_LIMIT)", with: String(SPLAT_DOT_LIMIT))
+                let source = metalSource.replacingOccurrences(of: "\\(RenderingConstants.splatDotLimit)", with: String(RenderingConstants.splatDotLimit))
                 let library = try! view.device!.makeLibrary(source: source, options: nil)
                 let vertexFunc = library.makeFunction(name: "vertex_main")
                 let fragmentFunc = library.makeFunction(name: "fragment_main")
@@ -318,9 +326,9 @@ struct MetalOverlayView: UIViewRepresentable {
             let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)!
             encoder.setRenderPipelineState(pipelineState!)
             encoder.setVertexBuffer(quadBuffer, offset: 0, index: 0)
-            encoder.setFragmentBytes(&xs, length: MemoryLayout<Float>.stride * SPLAT_DOT_LIMIT, index: 1)
-            encoder.setFragmentBytes(&ys, length: MemoryLayout<Float>.stride * SPLAT_DOT_LIMIT, index: 2)
-            encoder.setFragmentBytes(&radii, length: MemoryLayout<Float>.stride * SPLAT_DOT_LIMIT, index: 3)
+            encoder.setFragmentBytes(&xs, length: MemoryLayout<Float>.stride * RenderingConstants.splatDotLimit, index: 1)
+            encoder.setFragmentBytes(&ys, length: MemoryLayout<Float>.stride * RenderingConstants.splatDotLimit, index: 2)
+            encoder.setFragmentBytes(&radii, length: MemoryLayout<Float>.stride * RenderingConstants.splatDotLimit, index: 3)
             encoder.setFragmentBytes(&aspect, length: MemoryLayout<Float>.stride, index: 4)
             var splotColorVar = splotColor
             encoder.setFragmentBytes(&splotColorVar, length: MemoryLayout<SIMD3<Float>>.stride, index: 5)
