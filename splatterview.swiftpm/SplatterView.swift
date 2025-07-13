@@ -1,4 +1,4 @@
-// Version: 3.30
+// Version: 3.40
 import SwiftUI
 import UIKit
 import MetalKit
@@ -9,7 +9,7 @@ import Combine
 
 /// Single source of truth for version number - UPDATE THIS FOR EVERY CHANGE
 struct SplatterViewVersion {
-    static let current: String = "3.30"
+    static let current: String = "3.40"
 }
 
 // MARK: - Extensions
@@ -90,6 +90,95 @@ class SeededRandomGenerator: RandomGenerator {
     
     func double(in range: ClosedRange<Double>) -> Double {
         Double(float(in: Float(range.lowerBound)...Float(range.upperBound)))
+    }
+}
+
+// MARK: - Layer Template System
+
+/// Physics parameters for a single layer
+struct LayerPhysicsParams {
+    var velocityX: Float
+    var velocityY: Float
+    var force: Float
+    var centralElongation: Float
+    var particleElongation: Float
+    var timeElongation: Float
+    var noiseAmplitude: Float
+    var velocityRoughness: Float
+    var noiseFrequency: Float
+    
+    static let backgroundDefaults = LayerPhysicsParams(
+        velocityX: 0.1, velocityY: 0.1, force: 0.5,
+        centralElongation: 2.0, particleElongation: 1.5, timeElongation: 2.0,
+        noiseAmplitude: 0.3, velocityRoughness: 0.4, noiseFrequency: 20.0
+    )
+    
+    static let foregroundDefaults = LayerPhysicsParams(
+        velocityX: 0.2, velocityY: 0.15, force: 0.7,
+        centralElongation: 2.5, particleElongation: 1.8, timeElongation: 2.5,
+        noiseAmplitude: 0.4, velocityRoughness: 0.6, noiseFrequency: 25.0
+    )
+    
+    static let dramaticDefaults = LayerPhysicsParams(
+        velocityX: 1.5, velocityY: 0.8, force: 1.0,
+        centralElongation: 5.0, particleElongation: 3.0, timeElongation: 4.0,
+        noiseAmplitude: 0.8, velocityRoughness: 1.2, noiseFrequency: 30.0
+    )
+}
+
+/// Rendering configuration for a single layer
+struct LayerRenderingParams {
+    var enabled: Bool
+    var color: Color
+    var opacity: Float
+    var centralDot: Bool
+    var largeDots: Bool
+    var mediumDots: Bool
+    var smallDots: Bool
+    var microDots: Bool
+    
+    static let backgroundDefaults = LayerRenderingParams(
+        enabled: true, color: Color(red: 0.8, green: 0.1, blue: 0.1), opacity: 1.0,
+        centralDot: true, largeDots: true, mediumDots: true, smallDots: true, microDots: true
+    )
+    
+    static let foregroundDefaults = LayerRenderingParams(
+        enabled: true, color: Color(red: 0.3, green: 0.5, blue: 0.8), opacity: 0.6,
+        centralDot: false, largeDots: true, mediumDots: true, smallDots: false, microDots: true
+    )
+    
+    static let dramaticDefaults = LayerRenderingParams(
+        enabled: false, color: Color(red: 0.6, green: 0.0, blue: 0.0), opacity: 0.8,
+        centralDot: true, largeDots: true, mediumDots: true, smallDots: true, microDots: true
+    )
+}
+
+/// Complete layer template - combines physics and rendering
+struct LayerTemplate {
+    let name: String
+    let displayName: String
+    var physics: LayerPhysicsParams
+    var rendering: LayerRenderingParams
+    let zIndex: Double
+    
+    static func createDefaultLayers() -> [LayerTemplate] {
+        return [
+            LayerTemplate(
+                name: "background", displayName: "Background",
+                physics: .backgroundDefaults, rendering: .backgroundDefaults,
+                zIndex: 0
+            ),
+            LayerTemplate(
+                name: "foreground", displayName: "Foreground", 
+                physics: .foregroundDefaults, rendering: .foregroundDefaults,
+                zIndex: 1
+            ),
+            LayerTemplate(
+                name: "dramatic", displayName: "Dramatic",
+                physics: .dramaticDefaults, rendering: .dramaticDefaults,
+                zIndex: 2
+            )
+        ]
     }
 }
 
@@ -365,21 +454,8 @@ class SettingsManager {
         params.useSeededRNG = settings.randomisation.useSeededRNG
         params.rngSeed = settings.randomisation.rngSeed
         
-        params.backgroundPassEnabled = settings.layers.background.enabled
-        params.backgroundPassColor = colorFromRGB(settings.layers.background.color)
-        params.backgroundPassOpacity = settings.layers.background.opacity
-        params.backgroundCentralDot = settings.layers.background.dotTypes.central
-        params.backgroundLargeDots = settings.layers.background.dotTypes.large
-        params.backgroundMediumDots = settings.layers.background.dotTypes.medium
-        params.backgroundSmallDots = settings.layers.background.dotTypes.small
-        
-        params.foregroundPassEnabled = settings.layers.foreground.enabled
-        params.foregroundPassColor = colorFromRGB(settings.layers.foreground.color)
-        params.foregroundPassOpacity = settings.layers.foreground.opacity
-        params.foregroundCentralDot = settings.layers.foreground.dotTypes.central
-        params.foregroundLargeDots = settings.layers.foreground.dotTypes.large
-        params.foregroundMediumDots = settings.layers.foreground.dotTypes.medium
-        params.foregroundSmallDots = settings.layers.foreground.dotTypes.small
+        // Initialize with default layers - params.layers is already set by LayerTemplate.createDefaultLayers()
+        // The layers array is the single source of truth now
         
         return params
     }
@@ -387,97 +463,8 @@ class SettingsManager {
     // MARK: - Import/Export
     
     static func exportSettings(from viewModel: SplatterViewModel) -> String {
-        let settings = SplatterSettings(
-            splatterViewVersion: SplatterViewVersion.current,
-            rendering: SplatterSettings.RenderingSettings(
-                influenceThreshold: viewModel.rendering.influenceThreshold
-            ),
-            randomisation: SplatterSettings.RandomisationSettings(
-                useSeededRNG: viewModel.rendering.useSeededRNG,
-                rngSeed: viewModel.rendering.rngSeed
-            ),
-            dots: SplatterSettings.DotParameters(
-                central: SplatterSettings.DotParameters.CentralParams(
-                    radiusMin: viewModel.centralDot.radiusMin,
-                    radiusMax: viewModel.centralDot.radiusMax
-                ),
-                large: SplatterSettings.DotParameters.LargeParams(
-                    count: viewModel.largeDots.count,
-                    radiusMin: viewModel.largeDots.radiusMin,
-                    radiusMax: viewModel.largeDots.radiusMax,
-                    maxDistance: viewModel.largeDots.maxDistance
-                ),
-                medium: SplatterSettings.DotParameters.MediumParams(
-                    count: viewModel.mediumDots.count,
-                    radiusMin: viewModel.mediumDots.radiusMin,
-                    radiusMax: viewModel.mediumDots.radiusMax,
-                    maxDistance: viewModel.mediumDots.maxDistance
-                ),
-                small: SplatterSettings.DotParameters.SmallParams(
-                    count: viewModel.smallDots.count,
-                    radiusMin: viewModel.smallDots.radiusMin,
-                    radiusMax: viewModel.smallDots.radiusMax,
-                    maxDistance: viewModel.smallDots.maxDistance
-                )
-            ),
-            layers: SplatterSettings.LayerSettings(
-                background: SplatterSettings.LayerSettings.PassSettings(
-                    enabled: viewModel.rendering.backgroundPassEnabled,
-                    color: rgbFromColor(viewModel.rendering.backgroundPassColor),
-                    opacity: viewModel.rendering.backgroundPassOpacity,
-                    dotTypes: SplatterSettings.LayerSettings.DotTypeSettings(
-                        central: viewModel.rendering.backgroundCentralDot,
-                        large: viewModel.rendering.backgroundLargeDots,
-                        medium: viewModel.rendering.backgroundMediumDots,
-                        small: viewModel.rendering.backgroundSmallDots,
-                        micro: viewModel.rendering.backgroundMicroDots
-                    )
-                ),
-                foreground: SplatterSettings.LayerSettings.PassSettings(
-                    enabled: viewModel.rendering.foregroundPassEnabled,
-                    color: rgbFromColor(viewModel.rendering.foregroundPassColor),
-                    opacity: viewModel.rendering.foregroundPassOpacity,
-                    dotTypes: SplatterSettings.LayerSettings.DotTypeSettings(
-                        central: viewModel.rendering.foregroundCentralDot,
-                        large: viewModel.rendering.foregroundLargeDots,
-                        medium: viewModel.rendering.foregroundMediumDots,
-                        small: viewModel.rendering.foregroundSmallDots,
-                        micro: viewModel.rendering.foregroundMicroDots
-                    )
-                )
-            ),
-            dramaticEffects: SplatterSettings.DramaticEffectsSettings(
-                passEnabled: viewModel.rendering.dramaticPassEnabled,
-                passColor: rgbFromColor(viewModel.rendering.dramaticPassColor),
-                passOpacity: viewModel.rendering.dramaticPassOpacity,
-                dotTypes: SplatterSettings.LayerSettings.DotTypeSettings(
-                    central: viewModel.rendering.dramaticCentralDot,
-                    large: viewModel.rendering.dramaticLargeDots,
-                    medium: viewModel.rendering.dramaticMediumDots,
-                    small: viewModel.rendering.dramaticSmallDots,
-                    micro: viewModel.rendering.dramaticMicroDots
-                ),
-                velocityX: viewModel.rendering.dramaticVelocityX,
-                velocityY: viewModel.rendering.dramaticVelocityY,
-                force: viewModel.rendering.dramaticForce,
-                centralElongation: viewModel.rendering.dramaticCentralElongation,
-                particleElongation: viewModel.rendering.dramaticParticleElongation,
-                timeElongation: viewModel.rendering.dramaticTimeElongation,
-                noiseAmplitude: viewModel.rendering.dramaticNoiseAmplitude,
-                velocityRoughness: viewModel.rendering.dramaticVelocityRoughness,
-                noiseFrequency: viewModel.rendering.dramaticNoiseFrequency
-            )
-        )
-        
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        
-        do {
-            let data = try encoder.encode(settings)
-            return String(data: data, encoding: .utf8) ?? "Export failed"
-        } catch {
-            return "Export error: \(error.localizedDescription)"
-        }
+        // TODO: Update export to use new layer system
+        return "{\"message\": \"Export temporarily disabled during layer system refactoring\"}"
     }
     
     static func importSettings(json: String, to viewModel: SplatterViewModel) -> Bool {
@@ -494,69 +481,11 @@ class SettingsManager {
     }
     
     private static func applySettings(_ settings: SplatterSettings, to viewModel: SplatterViewModel) {
-        // Apply rendering settings
+        // TODO: Update import to use new layer system
+        // For now, just apply basic settings
         viewModel.rendering.influenceThreshold = settings.rendering.influenceThreshold
-        
-        // Apply randomisation settings
         viewModel.rendering.useSeededRNG = settings.randomisation.useSeededRNG
         viewModel.rendering.rngSeed = settings.randomisation.rngSeed
-        
-        // Apply dot parameters
-        viewModel.centralDot.radiusMin = settings.dots.central.radiusMin
-        viewModel.centralDot.radiusMax = settings.dots.central.radiusMax
-        
-        viewModel.largeDots.count = settings.dots.large.count
-        viewModel.largeDots.radiusMin = settings.dots.large.radiusMin
-        viewModel.largeDots.radiusMax = settings.dots.large.radiusMax
-        viewModel.largeDots.maxDistance = settings.dots.large.maxDistance
-        
-        viewModel.mediumDots.count = settings.dots.medium.count
-        viewModel.mediumDots.radiusMin = settings.dots.medium.radiusMin
-        viewModel.mediumDots.radiusMax = settings.dots.medium.radiusMax
-        viewModel.mediumDots.maxDistance = settings.dots.medium.maxDistance
-        
-        viewModel.smallDots.count = settings.dots.small.count
-        viewModel.smallDots.radiusMin = settings.dots.small.radiusMin
-        viewModel.smallDots.radiusMax = settings.dots.small.radiusMax
-        viewModel.smallDots.maxDistance = settings.dots.small.maxDistance
-        
-        // Apply layer settings
-        viewModel.rendering.backgroundPassEnabled = settings.layers.background.enabled
-        viewModel.rendering.backgroundPassColor = colorFromRGB(settings.layers.background.color)
-        viewModel.rendering.backgroundPassOpacity = settings.layers.background.opacity
-        viewModel.rendering.backgroundCentralDot = settings.layers.background.dotTypes.central
-        viewModel.rendering.backgroundLargeDots = settings.layers.background.dotTypes.large
-        viewModel.rendering.backgroundMediumDots = settings.layers.background.dotTypes.medium
-        viewModel.rendering.backgroundSmallDots = settings.layers.background.dotTypes.small
-        viewModel.rendering.backgroundMicroDots = settings.layers.background.dotTypes.micro
-        
-        viewModel.rendering.foregroundPassEnabled = settings.layers.foreground.enabled
-        viewModel.rendering.foregroundPassColor = colorFromRGB(settings.layers.foreground.color)
-        viewModel.rendering.foregroundPassOpacity = settings.layers.foreground.opacity
-        viewModel.rendering.foregroundCentralDot = settings.layers.foreground.dotTypes.central
-        viewModel.rendering.foregroundLargeDots = settings.layers.foreground.dotTypes.large
-        viewModel.rendering.foregroundMediumDots = settings.layers.foreground.dotTypes.medium
-        viewModel.rendering.foregroundSmallDots = settings.layers.foreground.dotTypes.small
-        viewModel.rendering.foregroundMicroDots = settings.layers.foreground.dotTypes.micro
-        
-        // Apply dramatic effects settings
-        viewModel.rendering.dramaticPassEnabled = settings.dramaticEffects.passEnabled
-        viewModel.rendering.dramaticPassColor = colorFromRGB(settings.dramaticEffects.passColor)
-        viewModel.rendering.dramaticPassOpacity = settings.dramaticEffects.passOpacity
-        viewModel.rendering.dramaticCentralDot = settings.dramaticEffects.dotTypes.central
-        viewModel.rendering.dramaticLargeDots = settings.dramaticEffects.dotTypes.large
-        viewModel.rendering.dramaticMediumDots = settings.dramaticEffects.dotTypes.medium
-        viewModel.rendering.dramaticSmallDots = settings.dramaticEffects.dotTypes.small
-        viewModel.rendering.dramaticMicroDots = settings.dramaticEffects.dotTypes.micro
-        viewModel.rendering.dramaticVelocityX = settings.dramaticEffects.velocityX
-        viewModel.rendering.dramaticVelocityY = settings.dramaticEffects.velocityY
-        viewModel.rendering.dramaticForce = settings.dramaticEffects.force
-        viewModel.rendering.dramaticCentralElongation = settings.dramaticEffects.centralElongation
-        viewModel.rendering.dramaticParticleElongation = settings.dramaticEffects.particleElongation
-        viewModel.rendering.dramaticTimeElongation = settings.dramaticEffects.timeElongation
-        viewModel.rendering.dramaticNoiseAmplitude = settings.dramaticEffects.noiseAmplitude
-        viewModel.rendering.dramaticVelocityRoughness = settings.dramaticEffects.velocityRoughness
-        viewModel.rendering.dramaticNoiseFrequency = settings.dramaticEffects.noiseFrequency
     }
     
     // MARK: - Utility Methods
@@ -673,46 +602,13 @@ class RenderingParams: ObservableObject {
     @Published var useSeededRNG: Bool = false
     @Published var rngSeed: UInt64 = 12345
     
-    // Background pass configuration
-    @Published var backgroundPassEnabled: Bool = true
-    @Published var backgroundPassColor: Color = Color(red: 0.8, green: 0.1, blue: 0.1)
-    @Published var backgroundPassOpacity: Float = 1.0
-    @Published var backgroundCentralDot: Bool = true
-    @Published var backgroundLargeDots: Bool = true
-    @Published var backgroundMediumDots: Bool = true
-    @Published var backgroundSmallDots: Bool = true
-    @Published var backgroundMicroDots: Bool = true
+    // Generic layer system - UI directly binds to this
+    @Published var layers: [LayerTemplate] = LayerTemplate.createDefaultLayers()
     
-    // Foreground pass configuration
-    @Published var foregroundPassEnabled: Bool = true
-    @Published var foregroundPassColor: Color = Color(red: 0.3, green: 0.5, blue: 0.8)
-    @Published var foregroundPassOpacity: Float = 0.6
-    @Published var foregroundCentralDot: Bool = false
-    @Published var foregroundLargeDots: Bool = true
-    @Published var foregroundMediumDots: Bool = true
-    @Published var foregroundSmallDots: Bool = false
-    @Published var foregroundMicroDots: Bool = true
-    
-    // Dramatic effects pass configuration
-    @Published var dramaticPassEnabled: Bool = false
-    @Published var dramaticPassColor: Color = Color(red: 0.6, green: 0.0, blue: 0.0)
-    @Published var dramaticPassOpacity: Float = 0.8
-    @Published var dramaticCentralDot: Bool = true
-    @Published var dramaticLargeDots: Bool = true
-    @Published var dramaticMediumDots: Bool = true
-    @Published var dramaticSmallDots: Bool = true
-    @Published var dramaticMicroDots: Bool = true
-    
-    // Dramatic effect parameters
-    @Published var dramaticVelocityX: Float = 1.5
-    @Published var dramaticVelocityY: Float = 0.8
-    @Published var dramaticForce: Float = 1.0
-    @Published var dramaticCentralElongation: Float = 5.0
-    @Published var dramaticParticleElongation: Float = 3.0
-    @Published var dramaticTimeElongation: Float = 4.0
-    @Published var dramaticNoiseAmplitude: Float = 0.8
-    @Published var dramaticVelocityRoughness: Float = 1.2
-    @Published var dramaticNoiseFrequency: Float = 30.0
+    // Helper methods for layer access
+    func getLayer(named name: String) -> LayerTemplate? {
+        return layers.first { $0.name == name }
+    }
 }
 
 // MARK: - Performance Monitoring
@@ -857,7 +753,8 @@ struct RenderPass {
 /// Primary view model coordinating splat state and Metal rendering data
 /// Implements reactive parameter binding with performance-optimized update batching
 class SplatterViewModel: ObservableObject {
-    @Published var splatData: [MetalDot] = []
+    // Generic layer system - each layer has its own dot storage
+    private var layerDots: [String: [MetalDot]] = [:]
     @Published var metalData: MetalDotData = MetalDotData(dots: [], renderMask: 0)
     
     // Parameter groups with reactive bindings - initialized from SettingsManager
@@ -873,132 +770,119 @@ class SplatterViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     
     var renderPasses: [RenderPass] {
-        [
+        return rendering.layers.map { layer in
             RenderPass(
-                name: "background",
-                enabled: rendering.backgroundPassEnabled,
-                color: rendering.backgroundPassColor.simd3,
-                renderMask: computeBackgroundRenderMask(),
-                opacity: rendering.backgroundPassOpacity,
-                zIndex: 0
-            ),
-            RenderPass(
-                name: "foreground",
-                enabled: rendering.foregroundPassEnabled,
-                color: rendering.foregroundPassColor.simd3,
-                renderMask: computeForegroundRenderMask(),
-                opacity: rendering.foregroundPassOpacity,
-                zIndex: 1
-            ),
-            RenderPass(
-                name: "dramatic",
-                enabled: rendering.dramaticPassEnabled,
-                color: rendering.dramaticPassColor.simd3,
-                renderMask: computeDramaticRenderMask(),
-                opacity: rendering.dramaticPassOpacity,
-                zIndex: 2
+                name: layer.name,
+                enabled: layer.rendering.enabled,
+                color: layer.rendering.color.simd3,
+                renderMask: computeRenderMask(for: layer),
+                opacity: layer.rendering.opacity,
+                zIndex: layer.zIndex
             )
-        ]
+        }
     }
     
     init() {
         setupReactiveBindings()
     }
     
-    private func computeBackgroundRenderMask() -> UInt32 {
+    private func computeRenderMask(for layer: LayerTemplate) -> UInt32 {
         var mask: UInt32 = 0
-        if rendering.backgroundCentralDot { mask |= RenderingConstants.centralDotMask }
-        if rendering.backgroundLargeDots { mask |= RenderingConstants.largeDotMask }
-        if rendering.backgroundMediumDots { mask |= RenderingConstants.mediumDotMask }
-        if rendering.backgroundSmallDots { mask |= RenderingConstants.smallDotMask }
-        if rendering.backgroundMicroDots { mask |= RenderingConstants.microDotMask }
-        return mask
-    }
-    
-    private func computeForegroundRenderMask() -> UInt32 {
-        var mask: UInt32 = 0
-        if rendering.foregroundCentralDot { mask |= RenderingConstants.centralDotMask }
-        if rendering.foregroundLargeDots { mask |= RenderingConstants.largeDotMask }
-        if rendering.foregroundMediumDots { mask |= RenderingConstants.mediumDotMask }
-        if rendering.foregroundSmallDots { mask |= RenderingConstants.smallDotMask }
-        if rendering.foregroundMicroDots { mask |= RenderingConstants.microDotMask }
-        return mask
-    }
-    
-    private func computeDramaticRenderMask() -> UInt32 {
-        var mask: UInt32 = 0
-        if rendering.dramaticCentralDot { mask |= RenderingConstants.centralDotMask }
-        if rendering.dramaticLargeDots { mask |= RenderingConstants.largeDotMask }
-        if rendering.dramaticMediumDots { mask |= RenderingConstants.mediumDotMask }
-        if rendering.dramaticSmallDots { mask |= RenderingConstants.smallDotMask }
-        if rendering.dramaticMicroDots { mask |= RenderingConstants.microDotMask }
+        if layer.rendering.centralDot { mask |= RenderingConstants.centralDotMask }
+        if layer.rendering.largeDots { mask |= RenderingConstants.largeDotMask }
+        if layer.rendering.mediumDots { mask |= RenderingConstants.mediumDotMask }
+        if layer.rendering.smallDots { mask |= RenderingConstants.smallDotMask }
+        if layer.rendering.microDots { mask |= RenderingConstants.microDotMask }
         return mask
     }
     
     private func computeRenderMask() -> UInt32 {
-        // Generate dots for any type enabled in any pass
-        let backgroundMask = computeBackgroundRenderMask()
-        let foregroundMask = computeForegroundRenderMask()
-        let dramaticMask = computeDramaticRenderMask()
-        return backgroundMask | foregroundMask | dramaticMask
+        // Generate dots for any type enabled in any layer
+        return rendering.layers.reduce(0) { combinedMask, layer in
+            combinedMask | computeRenderMask(for: layer)
+        }
     }
     
     func addSplat(at point: CGPoint, screenWidth: CGFloat, screenHeight: CGFloat) {
-        // Use configurable dramatic effect parameters when dramatic pass is enabled
-        let velocity = rendering.dramaticPassEnabled ? 
-            SIMD2<Float>(rendering.dramaticVelocityX, rendering.dramaticVelocityY) :
-            SIMD2<Float>(0.1, 0.1) // Default gentle velocity
-        let force = rendering.dramaticPassEnabled ? rendering.dramaticForce : 0.5
+        // Single shared RNG instance for all layers
+        let rng: RandomGenerator = rendering.useSeededRNG 
+            ? SeededRandomGenerator(seed: rendering.rngSeed)
+            : DefaultRandomGenerator()
         
-        let impact = SplatImpact(
-            position: point,
-            velocity: velocity,
-            force: force,
-            timestamp: CFAbsoluteTimeGetCurrent()
-        )
-        addSplat(impact: impact, screenWidth: screenWidth, screenHeight: screenHeight)
+        let timestamp = CFAbsoluteTimeGetCurrent()
+        
+        // Generic loop - works for any number of layers
+        for layer in rendering.layers where layer.rendering.enabled {
+            let impact = SplatImpact(
+                position: point,
+                velocity: SIMD2<Float>(layer.physics.velocityX, layer.physics.velocityY),
+                force: layer.physics.force,
+                timestamp: timestamp
+            )
+            
+            // Generate dots using the same code for all layers
+            let newDots = generateLayerSplat(
+                impact: impact,
+                layer: layer,
+                screenWidth: screenWidth,
+                screenHeight: screenHeight,
+                rng: rng
+            )
+            
+            // Store in layer's own dot array
+            if layerDots[layer.name] == nil {
+                layerDots[layer.name] = []
+            }
+            layerDots[layer.name]!.append(contentsOf: newDots)
+        }
+        
+        isDirty = true
+        updateMetalData()
     }
     
-    func addSplat(impact: SplatImpact, screenWidth: CGFloat, screenHeight: CGFloat) {
+    /// Generic layer splat generation - same code used for all layers
+    private func generateLayerSplat(
+        impact: SplatImpact,
+        layer: LayerTemplate,
+        screenWidth: CGFloat,
+        screenHeight: CGFloat,
+        rng: RandomGenerator
+    ) -> [MetalDot] {
         // Safety check: Prevent memory overflow
-        if splatData.count >= RenderingConstants.maxSplatCount {
+        let currentDotsCount = layerDots.values.reduce(0) { $0 + $1.count }
+        if currentDotsCount >= RenderingConstants.maxSplatCount {
             print("Warning: Maximum splat count reached (\(RenderingConstants.maxSplatCount)). Ignoring new splat.")
-            return
+            return []
         }
         
         let normalizedX = Float(impact.position.x / screenWidth)
         let normalizedY = Float(impact.position.y / screenHeight)
         let center = SIMD2<Float>(normalizedX, normalizedY)
         
-        let rng: RandomGenerator = rendering.useSeededRNG 
-            ? SeededRandomGenerator(seed: rendering.rngSeed)
-            : DefaultRandomGenerator()
-        
         var newDots: [MetalDot] = []
         var totalNewDots = 0
         
         // Pre-calculate total dots to ensure we don't exceed limits
-        if centralDot.enabled { totalNewDots += 1 }
-        if largeDots.enabled { totalNewDots += largeDots.count }
-        if mediumDots.enabled { totalNewDots += mediumDots.count }
-        if smallDots.enabled { totalNewDots += smallDots.count }
-        if microDots.enabled { totalNewDots += microDots.count }
+        if centralDot.enabled && layer.rendering.centralDot { totalNewDots += 1 }
+        if largeDots.enabled && layer.rendering.largeDots { totalNewDots += largeDots.count }
+        if mediumDots.enabled && layer.rendering.mediumDots { totalNewDots += mediumDots.count }
+        if smallDots.enabled && layer.rendering.smallDots { totalNewDots += smallDots.count }
+        if microDots.enabled && layer.rendering.microDots { totalNewDots += microDots.count }
         
         if totalNewDots > RenderingConstants.maxDotsPerSplat {
             print("Warning: Splat would create \(totalNewDots) dots, exceeding limit of \(RenderingConstants.maxDotsPerSplat). Ignoring.")
-            return
+            return []
         }
         
         // Central dot with velocity-based elongation
-        if centralDot.enabled {
+        if centralDot.enabled && layer.rendering.centralDot {
             let minRadius = min(centralDot.radiusMin, centralDot.radiusMax)
             let maxRadius = max(centralDot.radiusMin, centralDot.radiusMax)
             let radius = rng.float(in: minRadius...maxRadius)
             
-            // Apply impact velocity and force to central dot with configurable elongation
+            // Apply impact velocity and force to central dot with layer-specific elongation
             let velocityMagnitude = length(impact.velocity)
-            let elongationMultiplier = rendering.dramaticPassEnabled ? rendering.dramaticCentralElongation : 2.0
-            let elongationFactor = 1.0 + velocityMagnitude * impact.force * elongationMultiplier
+            let elongationFactor = 1.0 + velocityMagnitude * impact.force * layer.physics.centralElongation
             
             newDots.append(MetalDot(
                 position: center, 
@@ -1010,7 +894,7 @@ class SplatterViewModel: ObservableObject {
         }
         
         // Generate satellite dots using velocity-aware helper method
-        if largeDots.enabled {
+        if largeDots.enabled && layer.rendering.largeDots {
             newDots.append(contentsOf: generateVelocityBasedSatelliteDots(
                 count: largeDots.count,
                 radiusMin: largeDots.radiusMin,
@@ -1019,11 +903,12 @@ class SplatterViewModel: ObservableObject {
                 center: center,
                 type: .large,
                 impact: impact,
+                layer: layer,
                 rng: rng
             ))
         }
         
-        if mediumDots.enabled {
+        if mediumDots.enabled && layer.rendering.mediumDots {
             newDots.append(contentsOf: generateVelocityBasedSatelliteDots(
                 count: mediumDots.count,
                 radiusMin: mediumDots.radiusMin,
@@ -1032,11 +917,12 @@ class SplatterViewModel: ObservableObject {
                 center: center,
                 type: .medium,
                 impact: impact,
+                layer: layer,
                 rng: rng
             ))
         }
         
-        if smallDots.enabled {
+        if smallDots.enabled && layer.rendering.smallDots {
             newDots.append(contentsOf: generateVelocityBasedSatelliteDots(
                 count: smallDots.count,
                 radiusMin: smallDots.radiusMin,
@@ -1045,11 +931,12 @@ class SplatterViewModel: ObservableObject {
                 center: center,
                 type: .small,
                 impact: impact,
+                layer: layer,
                 rng: rng
             ))
         }
         
-        if microDots.enabled {
+        if microDots.enabled && layer.rendering.microDots {
             newDots.append(contentsOf: generateVelocityBasedSatelliteDots(
                 count: microDots.count,
                 radiusMin: microDots.radiusMin,
@@ -1058,14 +945,14 @@ class SplatterViewModel: ObservableObject {
                 center: center,
                 type: .micro,
                 impact: impact,
+                layer: layer,
                 rng: rng
             ))
         }
         
-        splatData.append(contentsOf: newDots)
-        isDirty = true
-        updateMetalData()
+        return newDots
     }
+    
     
     /// Helper method to generate satellite dots with consistent logic
     private func generateSatelliteDots(
@@ -1105,6 +992,7 @@ class SplatterViewModel: ObservableObject {
         center: SIMD2<Float>,
         type: DotType,
         impact: SplatImpact,
+        layer: LayerTemplate,
         rng: RandomGenerator
     ) -> [MetalDot] {
         var dots: [MetalDot] = []
@@ -1117,10 +1005,10 @@ class SplatterViewModel: ObservableObject {
             let baseAngle = rng.float(in: 0...(2 * Float.pi))
             let velocityAngle = atan2(velocityDirection.y, velocityDirection.x)
             let angleBias = impact.force * 0.5 // Stronger impacts create more directional bias
-            let angle = baseAngle + (velocityAngle * angleBias)
+            let _ = baseAngle + (velocityAngle * angleBias) // angle calculation
             
             // Physics-based trajectory calculation with gravity and time
-            let timeStep: Float = 0.1 // Simulation time step for particle trajectory
+            let _: Float = 0.1 // timeStep for particle trajectory
             let gravity = SIMD2<Float>(0, 0.3) // Downward gravity effect
             
             // Initial particle velocity with random variation
@@ -1138,7 +1026,7 @@ class SplatterViewModel: ObservableObject {
             // Clamp to maximum distance for safety
             let trajectoryVector = finalPosition - center
             let trajectoryDistance = length(trajectoryVector)
-            let distance = min(trajectoryDistance, maxDistance * 1.5)
+            let _ = min(trajectoryDistance, maxDistance * 1.5) // distance calculation
             
             // Surface tension effects on particle size
             let minRadius = min(radiusMin, radiusMax)
@@ -1158,9 +1046,10 @@ class SplatterViewModel: ObservableObject {
             // Final particle velocity after physics simulation
             let finalParticleVelocity = particleVelocity + gravityEffect * 2.0 // Gravity affects velocity too
             
-            // Time-based elongation - particles elongate based on configurable parameters
-            let timeElongationMultiplier = rendering.dramaticPassEnabled ? rendering.dramaticTimeElongation : 2.0
-            let particleElongationMultiplier = rendering.dramaticPassEnabled ? rendering.dramaticParticleElongation : 1.5
+            // Time-based elongation - particles elongate based on layer-specific parameters
+            let timeElongationMultiplier = layer.physics.timeElongation
+            let particleElongationMultiplier = layer.physics.particleElongation
+            
             let timeElongation = trajectoryTime * timeElongationMultiplier
             let particleVelocityMagnitude = length(finalParticleVelocity)
             let elongation = 1.0 + (particleVelocityMagnitude * impact.force * particleElongationMultiplier) + timeElongation
@@ -1178,7 +1067,7 @@ class SplatterViewModel: ObservableObject {
     }
     
     func clear() {
-        splatData.removeAll()
+        layerDots.removeAll()
         isDirty = true
         updateMetalData()
     }
@@ -1186,8 +1075,10 @@ class SplatterViewModel: ObservableObject {
     func updateMetalData() {
         guard isDirty else { return }
         
+        // Combine all layer dots into one array for Metal rendering
+        let allDots = layerDots.values.flatMap { $0 }
         let renderMask = computeRenderMask()
-        metalData = MetalDotData(dots: splatData, renderMask: renderMask)
+        metalData = MetalDotData(dots: allDots, renderMask: renderMask)
         isDirty = false
     }
     
@@ -1204,7 +1095,18 @@ class SplatterViewModel: ObservableObject {
     private func setupReactiveBindings() {
         // GEOMETRY-AFFECTING CHANGES: These require metalData recomputation
         
-        // Parameter changes that affect dot generation (when new splats are added)
+        // Layer changes - trigger update when any layer properties change
+        rendering.$layers
+            .debounce(for: .milliseconds(RenderingConstants.reactiveUpdateDebounceMs), scheduler: RunLoop.main)
+            .sink { [weak self] _ in 
+                self?.updateMetalData()
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+        
+        // TODO: Parameter changes that affect dot generation (when new splats are added)
+        // Temporarily disabled during layer system refactoring
+        /*
         Publishers.CombineLatest4(centralDot.$radiusMin, centralDot.$radiusMax, largeDots.$count, largeDots.$radiusMin)
             .combineLatest(Publishers.CombineLatest4(largeDots.$radiusMax, largeDots.$maxDistance, mediumDots.$count, mediumDots.$radiusMin))
             .combineLatest(Publishers.CombineLatest4(mediumDots.$radiusMax, mediumDots.$maxDistance, smallDots.$count, smallDots.$radiusMin))
@@ -1212,8 +1114,11 @@ class SplatterViewModel: ObservableObject {
             .debounce(for: .milliseconds(RenderingConstants.reactiveUpdateDebounceMs), scheduler: RunLoop.main)
             .sink { [weak self] _ in self?.updateMetalData() }
             .store(in: &cancellables)
+        */
         
-        // Dot type visibility changes (affect renderMask but not metalData geometry)
+        // TODO: Dot type visibility changes (affect renderMask but not metalData geometry)
+        // Temporarily disabled during layer system refactoring
+        /*
         // Background pass dot type changes
         rendering.$backgroundCentralDot
             .combineLatest(rendering.$backgroundLargeDots, rendering.$backgroundMediumDots, rendering.$backgroundSmallDots)
@@ -1225,10 +1130,13 @@ class SplatterViewModel: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+        */
         
         // VISUAL-ONLY CHANGES: Only affect rendering appearance - no geometry recomputation needed
         
-        // Rendering pass enabled/disabled (affects render pass list but not geometry)
+        // TODO: Rendering pass enabled/disabled (affects render pass list but not geometry)
+        // Temporarily disabled during layer system refactoring
+        /*
         rendering.$backgroundPassEnabled
             .combineLatest(rendering.$foregroundPassEnabled)
             .debounce(for: .milliseconds(RenderingConstants.reactiveUpdateDebounceMs), scheduler: RunLoop.main)
@@ -1237,8 +1145,11 @@ class SplatterViewModel: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+        */
         
-        // Color changes (pure visual - no geometry impact)
+        // TODO: Color changes (pure visual - no geometry impact)
+        // Temporarily disabled during layer system refactoring
+        /*
         rendering.$backgroundPassColor
             .combineLatest(rendering.$foregroundPassColor)
             .debounce(for: .milliseconds(RenderingConstants.reactiveUpdateDebounceMs), scheduler: RunLoop.main)
@@ -1248,6 +1159,21 @@ class SplatterViewModel: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+        */
+    }
+    
+    // MARK: - Layer-specific parameter helpers
+    
+    func getNoiseAmplitude(for layerName: String) -> Float {
+        return rendering.getLayer(named: layerName)?.physics.noiseAmplitude ?? 0.3
+    }
+    
+    func getVelocityRoughness(for layerName: String) -> Float {
+        return rendering.getLayer(named: layerName)?.physics.velocityRoughness ?? 0.4
+    }
+    
+    func getNoiseFrequency(for layerName: String) -> Float {
+        return rendering.getLayer(named: layerName)?.physics.noiseFrequency ?? 20.0
     }
 }
 
@@ -1265,9 +1191,9 @@ struct SplatterView: View {
                         splatColor: renderPass.color,
                         renderMask: renderPass.renderMask,
                         influenceThreshold: viewModel.rendering.influenceThreshold,
-                        dramaticNoiseAmplitude: viewModel.rendering.dramaticNoiseAmplitude,
-                        dramaticVelocityRoughness: viewModel.rendering.dramaticVelocityRoughness,
-                        dramaticNoiseFrequency: viewModel.rendering.dramaticNoiseFrequency,
+                        noiseAmplitude: viewModel.getNoiseAmplitude(for: renderPass.name),
+                        velocityRoughness: viewModel.getVelocityRoughness(for: renderPass.name),
+                        noiseFrequency: viewModel.getNoiseFrequency(for: renderPass.name),
                         isDramaticPass: renderPass.name == "dramatic"
                     )
                     .allowsHitTesting(false)
@@ -1340,9 +1266,9 @@ struct SplatterEditorView: View {
                                     splatColor: renderPass.color,
                                     renderMask: renderPass.renderMask,
                                     influenceThreshold: viewModel.rendering.influenceThreshold,
-                                    dramaticNoiseAmplitude: viewModel.rendering.dramaticNoiseAmplitude,
-                                    dramaticVelocityRoughness: viewModel.rendering.dramaticVelocityRoughness,
-                                    dramaticNoiseFrequency: viewModel.rendering.dramaticNoiseFrequency,
+                                    noiseAmplitude: viewModel.getNoiseAmplitude(for: renderPass.name),
+                                    velocityRoughness: viewModel.getVelocityRoughness(for: renderPass.name),
+                                    noiseFrequency: viewModel.getNoiseFrequency(for: renderPass.name),
                                     isDramaticPass: renderPass.name == "dramatic"
                                 )
                                 .allowsHitTesting(false)
@@ -1380,6 +1306,20 @@ struct SplatterEditorView: View {
 
 struct ParameterControlPanel: View {
     @ObservedObject var viewModel: SplatterViewModel
+    
+    // Helper function to get tint color for layer toggles
+    private func getLayerTintColor(for layerName: String) -> Color {
+        switch layerName.lowercased() {
+        case "background":
+            return .blue
+        case "foreground":
+            return .orange
+        case "dramatic":
+            return .red
+        default:
+            return .gray
+        }
+    }
     
     var body: some View {
         ScrollView {
@@ -1422,18 +1362,33 @@ struct ParameterControlPanel: View {
                 }
                 .padding(.bottom, 8)
                 
-                // Color Controls
+                // Generic Layer Controls - TODO: Complete implementation
+                GroupBox("Layer Controls") {
+                    VStack {
+                        Text("Generic UI under development")
+                            .foregroundColor(.secondary)
+                        Text("Layer system v3.39 architecture complete")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding()
+                }
+                
+                // TODO: Replace this section with full generic layer UI
+                /*
                 GroupBox("Colors") {
                     VStack(spacing: 12) {
                         VStack {
                             HStack {
-                                Toggle("Background Pass", isOn: $viewModel.rendering.backgroundPassEnabled)
+                                // TODO: Replace with generic layer UI
+                                Toggle("Background Pass", isOn: .constant(true)) // $viewModel.rendering.backgroundPassEnabled
                                 Spacer()
                             }
-                            if viewModel.rendering.backgroundPassEnabled {
+                            if true { // viewModel.rendering.backgroundPassEnabled
                                 VStack {
                                     if #available(iOS 14.0, *) {
-                                        ColorPicker("Background Color", selection: $viewModel.rendering.backgroundPassColor)
+                                        // TODO: Replace with generic layer UI
+                                        ColorPicker("Background Color", selection: .constant(Color.blue)) // $viewModel.rendering.backgroundPassColor
                                     } else {
                                         HStack {
                                             Text("Background Color")
@@ -1802,6 +1757,22 @@ struct ParameterControlPanel: View {
                                 .buttonStyle(.bordered)
                             }
                         }
+                */
+                
+                // Basic RNG Controls (working)
+                GroupBox("Random Number Generation") {
+                    VStack(spacing: 8) {
+                        Toggle("Use Seeded RNG", isOn: $viewModel.rendering.useSeededRNG)
+                        if viewModel.rendering.useSeededRNG {
+                            HStack {
+                                Text("Seed: \(Int(viewModel.rendering.rngSeed))")
+                                Spacer()
+                                Button("Random Seed") {
+                                    viewModel.rendering.rngSeed = UInt64.random(in: 1...99999)
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
                     }
                 }
             }
@@ -1818,9 +1789,9 @@ struct MetalOverlayView: UIViewRepresentable {
     let splatColor: SIMD3<Float>
     let renderMask: UInt32
     let influenceThreshold: Float
-    let dramaticNoiseAmplitude: Float
-    let dramaticVelocityRoughness: Float
-    let dramaticNoiseFrequency: Float
+    let noiseAmplitude: Float
+    let velocityRoughness: Float
+    let noiseFrequency: Float
     let isDramaticPass: Bool
     
     func makeUIView(context: UIViewRepresentableContext<MetalOverlayView>) -> MTKView {
@@ -1857,29 +1828,29 @@ struct MetalOverlayView: UIViewRepresentable {
         Coordinator(
             splatColor: splatColor, 
             influenceThreshold: influenceThreshold,
-            dramaticNoiseAmplitude: dramaticNoiseAmplitude,
-            dramaticVelocityRoughness: dramaticVelocityRoughness,
-            dramaticNoiseFrequency: dramaticNoiseFrequency,
+            noiseAmplitude: noiseAmplitude,
+            velocityRoughness: velocityRoughness,
+            noiseFrequency: noiseFrequency,
             isDramaticPass: isDramaticPass
         )
     }
     class Coordinator: NSObject, MTKViewDelegate {
         var splatColor: SIMD3<Float>
         var influenceThreshold: Float
-        var dramaticNoiseAmplitude: Float
-        var dramaticVelocityRoughness: Float
-        var dramaticNoiseFrequency: Float
+        var noiseAmplitude: Float
+        var velocityRoughness: Float
+        var noiseFrequency: Float
         var isDramaticPass: Bool
         let stateManager: MetalStateManager
         private let metalService: MetalRenderService
         private var frameCount: Int = 0
         
-        init(splatColor: SIMD3<Float>, influenceThreshold: Float, dramaticNoiseAmplitude: Float, dramaticVelocityRoughness: Float, dramaticNoiseFrequency: Float, isDramaticPass: Bool) {
+        init(splatColor: SIMD3<Float>, influenceThreshold: Float, noiseAmplitude: Float, velocityRoughness: Float, noiseFrequency: Float, isDramaticPass: Bool) {
             self.splatColor = splatColor
             self.influenceThreshold = influenceThreshold
-            self.dramaticNoiseAmplitude = dramaticNoiseAmplitude
-            self.dramaticVelocityRoughness = dramaticVelocityRoughness
-            self.dramaticNoiseFrequency = dramaticNoiseFrequency
+            self.noiseAmplitude = noiseAmplitude
+            self.velocityRoughness = velocityRoughness
+            self.noiseFrequency = noiseFrequency
             self.isDramaticPass = isDramaticPass
             self.stateManager = MetalStateManager()
             self.metalService = MetalRenderService()
@@ -1918,9 +1889,9 @@ struct MetalOverlayView: UIViewRepresentable {
                 renderMask: stateManager.renderMask,
                 influenceThreshold: influenceThreshold,
                 aspectRatio: aspectRatio,
-                dramaticNoiseAmplitude: dramaticNoiseAmplitude,
-                dramaticVelocityRoughness: dramaticVelocityRoughness,
-                dramaticNoiseFrequency: dramaticNoiseFrequency,
+                dramaticNoiseAmplitude: noiseAmplitude,
+                dramaticVelocityRoughness: velocityRoughness,
+                dramaticNoiseFrequency: noiseFrequency,
                 isDramaticPass: isDramaticPass
             )
             
