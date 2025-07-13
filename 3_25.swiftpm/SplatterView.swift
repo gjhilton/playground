@@ -1,4 +1,4 @@
-// Version: 3.27
+// Version: 3.25
 import SwiftUI
 import UIKit
 import MetalKit
@@ -95,7 +95,6 @@ struct SplatterSettings: Codable {
     let randomisation: RandomisationSettings
     let dots: DotParameters
     let layers: LayerSettings
-    let dramaticEffects: DramaticEffectsSettings
     
     private enum CodingKeys: String, CodingKey {
         case splatterViewVersion = "splatterView version"
@@ -103,7 +102,6 @@ struct SplatterSettings: Codable {
         case randomisation
         case dots
         case layers
-        case dramaticEffects
     }
     
     struct RenderingSettings: Codable {
@@ -172,22 +170,6 @@ struct SplatterSettings: Codable {
             let small: Bool
         }
     }
-    
-    struct DramaticEffectsSettings: Codable {
-        let passEnabled: Bool
-        let passColor: LayerSettings.ColorRGB
-        let passOpacity: Float
-        let dotTypes: LayerSettings.DotTypeSettings
-        let velocityX: Float
-        let velocityY: Float
-        let force: Float
-        let centralElongation: Float
-        let particleElongation: Float
-        let timeElongation: Float
-        let noiseAmplitude: Float
-        let velocityRoughness: Float
-        let noiseFrequency: Float
-    }
 }
 
 // MARK: - Settings Manager
@@ -197,7 +179,7 @@ class SettingsManager {
     /// Default settings JSON - update this with exported settings to change defaults
     private static let defaultSettingsJSON = """
     {
-      "splatterView version": "3.27",
+      "splatterView version": "3.11",
       "rendering": {
         "influenceThreshold": 0.001
       },
@@ -260,30 +242,6 @@ class SettingsManager {
           "enabled": true,
           "opacity": 0.6
         }
-      },
-      "dramaticEffects": {
-        "passEnabled": false,
-        "passColor": {
-          "r": 0.6,
-          "g": 0.0,
-          "b": 0.0
-        },
-        "passOpacity": 0.8,
-        "dotTypes": {
-          "central": true,
-          "large": true,
-          "medium": true,
-          "small": true
-        },
-        "velocityX": 1.5,
-        "velocityY": 0.8,
-        "force": 1.0,
-        "centralElongation": 5.0,
-        "particleElongation": 3.0,
-        "timeElongation": 4.0,
-        "noiseAmplitude": 0.8,
-        "velocityRoughness": 1.2,
-        "noiseFrequency": 30.0
       }
     }
     """
@@ -377,7 +335,7 @@ class SettingsManager {
     
     static func exportSettings(from viewModel: SplatterViewModel) -> String {
         let settings = SplatterSettings(
-            splatterViewVersion: "3.27",
+            splatterViewVersion: "3.25",
             rendering: SplatterSettings.RenderingSettings(
                 influenceThreshold: viewModel.rendering.influenceThreshold
             ),
@@ -432,26 +390,6 @@ class SettingsManager {
                         small: viewModel.rendering.foregroundSmallDots
                     )
                 )
-            ),
-            dramaticEffects: SplatterSettings.DramaticEffectsSettings(
-                passEnabled: viewModel.rendering.dramaticPassEnabled,
-                passColor: rgbFromColor(viewModel.rendering.dramaticPassColor),
-                passOpacity: viewModel.rendering.dramaticPassOpacity,
-                dotTypes: SplatterSettings.LayerSettings.DotTypeSettings(
-                    central: viewModel.rendering.dramaticCentralDot,
-                    large: viewModel.rendering.dramaticLargeDots,
-                    medium: viewModel.rendering.dramaticMediumDots,
-                    small: viewModel.rendering.dramaticSmallDots
-                ),
-                velocityX: viewModel.rendering.dramaticVelocityX,
-                velocityY: viewModel.rendering.dramaticVelocityY,
-                force: viewModel.rendering.dramaticForce,
-                centralElongation: viewModel.rendering.dramaticCentralElongation,
-                particleElongation: viewModel.rendering.dramaticParticleElongation,
-                timeElongation: viewModel.rendering.dramaticTimeElongation,
-                noiseAmplitude: viewModel.rendering.dramaticNoiseAmplitude,
-                velocityRoughness: viewModel.rendering.dramaticVelocityRoughness,
-                noiseFrequency: viewModel.rendering.dramaticNoiseFrequency
             )
         )
         
@@ -522,24 +460,6 @@ class SettingsManager {
         viewModel.rendering.foregroundLargeDots = settings.layers.foreground.dotTypes.large
         viewModel.rendering.foregroundMediumDots = settings.layers.foreground.dotTypes.medium
         viewModel.rendering.foregroundSmallDots = settings.layers.foreground.dotTypes.small
-        
-        // Apply dramatic effects settings
-        viewModel.rendering.dramaticPassEnabled = settings.dramaticEffects.passEnabled
-        viewModel.rendering.dramaticPassColor = colorFromRGB(settings.dramaticEffects.passColor)
-        viewModel.rendering.dramaticPassOpacity = settings.dramaticEffects.passOpacity
-        viewModel.rendering.dramaticCentralDot = settings.dramaticEffects.dotTypes.central
-        viewModel.rendering.dramaticLargeDots = settings.dramaticEffects.dotTypes.large
-        viewModel.rendering.dramaticMediumDots = settings.dramaticEffects.dotTypes.medium
-        viewModel.rendering.dramaticSmallDots = settings.dramaticEffects.dotTypes.small
-        viewModel.rendering.dramaticVelocityX = settings.dramaticEffects.velocityX
-        viewModel.rendering.dramaticVelocityY = settings.dramaticEffects.velocityY
-        viewModel.rendering.dramaticForce = settings.dramaticEffects.force
-        viewModel.rendering.dramaticCentralElongation = settings.dramaticEffects.centralElongation
-        viewModel.rendering.dramaticParticleElongation = settings.dramaticEffects.particleElongation
-        viewModel.rendering.dramaticTimeElongation = settings.dramaticEffects.timeElongation
-        viewModel.rendering.dramaticNoiseAmplitude = settings.dramaticEffects.noiseAmplitude
-        viewModel.rendering.dramaticVelocityRoughness = settings.dramaticEffects.velocityRoughness
-        viewModel.rendering.dramaticNoiseFrequency = settings.dramaticEffects.noiseFrequency
     }
     
     // MARK: - Utility Methods
@@ -675,27 +595,6 @@ class RenderingParams: ObservableObject {
     @Published var foregroundMediumDots: Bool = true
     @Published var foregroundSmallDots: Bool = false
     @Published var foregroundMicroDots: Bool = true
-    
-    // Dramatic effects pass configuration
-    @Published var dramaticPassEnabled: Bool = false
-    @Published var dramaticPassColor: Color = Color(red: 0.6, green: 0.0, blue: 0.0)
-    @Published var dramaticPassOpacity: Float = 0.8
-    @Published var dramaticCentralDot: Bool = true
-    @Published var dramaticLargeDots: Bool = true
-    @Published var dramaticMediumDots: Bool = true
-    @Published var dramaticSmallDots: Bool = true
-    @Published var dramaticMicroDots: Bool = true
-    
-    // Dramatic effect parameters
-    @Published var dramaticVelocityX: Float = 1.5
-    @Published var dramaticVelocityY: Float = 0.8
-    @Published var dramaticForce: Float = 1.0
-    @Published var dramaticCentralElongation: Float = 5.0
-    @Published var dramaticParticleElongation: Float = 3.0
-    @Published var dramaticTimeElongation: Float = 4.0
-    @Published var dramaticNoiseAmplitude: Float = 0.8
-    @Published var dramaticVelocityRoughness: Float = 1.2
-    @Published var dramaticNoiseFrequency: Float = 30.0
 }
 
 // MARK: - Performance Monitoring
@@ -872,14 +771,6 @@ class SplatterViewModel: ObservableObject {
                 renderMask: computeForegroundRenderMask(),
                 opacity: rendering.foregroundPassOpacity,
                 zIndex: 1
-            ),
-            RenderPass(
-                name: "dramatic",
-                enabled: rendering.dramaticPassEnabled,
-                color: rendering.dramaticPassColor.simd3,
-                renderMask: computeDramaticRenderMask(),
-                opacity: rendering.dramaticPassOpacity,
-                zIndex: 2
             )
         ]
     }
@@ -908,35 +799,19 @@ class SplatterViewModel: ObservableObject {
         return mask
     }
     
-    private func computeDramaticRenderMask() -> UInt32 {
-        var mask: UInt32 = 0
-        if rendering.dramaticCentralDot { mask |= RenderingConstants.centralDotMask }
-        if rendering.dramaticLargeDots { mask |= RenderingConstants.largeDotMask }
-        if rendering.dramaticMediumDots { mask |= RenderingConstants.mediumDotMask }
-        if rendering.dramaticSmallDots { mask |= RenderingConstants.smallDotMask }
-        if rendering.dramaticMicroDots { mask |= RenderingConstants.microDotMask }
-        return mask
-    }
-    
     private func computeRenderMask() -> UInt32 {
-        // Generate dots for any type enabled in any pass
+        // Generate dots for any type enabled in either pass
         let backgroundMask = computeBackgroundRenderMask()
         let foregroundMask = computeForegroundRenderMask()
-        let dramaticMask = computeDramaticRenderMask()
-        return backgroundMask | foregroundMask | dramaticMask
+        return backgroundMask | foregroundMask
     }
     
     func addSplat(at point: CGPoint, screenWidth: CGFloat, screenHeight: CGFloat) {
-        // Use configurable dramatic effect parameters when dramatic pass is enabled
-        let velocity = rendering.dramaticPassEnabled ? 
-            SIMD2<Float>(rendering.dramaticVelocityX, rendering.dramaticVelocityY) :
-            SIMD2<Float>(0.1, 0.1) // Default gentle velocity
-        let force = rendering.dramaticPassEnabled ? rendering.dramaticForce : 0.5
-        
+        // Create default impact for backward compatibility with dramatic effects
         let impact = SplatImpact(
             position: point,
-            velocity: velocity,
-            force: force,
+            velocity: SIMD2<Float>(1.5, 0.8), // Much higher velocity for dramatic effect
+            force: 1.0, // Maximum force for bold splatter
             timestamp: CFAbsoluteTimeGetCurrent()
         )
         addSplat(impact: impact, screenWidth: screenWidth, screenHeight: screenHeight)
@@ -978,10 +853,9 @@ class SplatterViewModel: ObservableObject {
             let maxRadius = max(centralDot.radiusMin, centralDot.radiusMax)
             let radius = rng.float(in: minRadius...maxRadius)
             
-            // Apply impact velocity and force to central dot with configurable elongation
+            // Apply impact velocity and force to central dot with dramatic elongation
             let velocityMagnitude = length(impact.velocity)
-            let elongationMultiplier = rendering.dramaticPassEnabled ? rendering.dramaticCentralElongation : 2.0
-            let elongationFactor = 1.0 + velocityMagnitude * impact.force * elongationMultiplier
+            let elongationFactor = 1.0 + velocityMagnitude * impact.force * 5.0 // Much more dramatic elongation
             
             newDots.append(MetalDot(
                 position: center, 
@@ -1141,12 +1015,10 @@ class SplatterViewModel: ObservableObject {
             // Final particle velocity after physics simulation
             let finalParticleVelocity = particleVelocity + gravityEffect * 2.0 // Gravity affects velocity too
             
-            // Time-based elongation - particles elongate based on configurable parameters
-            let timeElongationMultiplier = rendering.dramaticPassEnabled ? rendering.dramaticTimeElongation : 2.0
-            let particleElongationMultiplier = rendering.dramaticPassEnabled ? rendering.dramaticParticleElongation : 1.5
-            let timeElongation = trajectoryTime * timeElongationMultiplier
+            // Time-based elongation - particles elongate dramatically during flight
+            let timeElongation = trajectoryTime * 4.0 // Much more time-based elongation
             let particleVelocityMagnitude = length(finalParticleVelocity)
-            let elongation = 1.0 + (particleVelocityMagnitude * impact.force * particleElongationMultiplier) + timeElongation
+            let elongation = 1.0 + (particleVelocityMagnitude * impact.force * 3.0) + timeElongation
             
             dots.append(MetalDot(
                 position: position,
@@ -1247,11 +1119,7 @@ struct SplatterView: View {
                         dots: viewModel.metalData.dots,
                         splatColor: renderPass.color,
                         renderMask: renderPass.renderMask,
-                        influenceThreshold: viewModel.rendering.influenceThreshold,
-                        dramaticNoiseAmplitude: viewModel.rendering.dramaticNoiseAmplitude,
-                        dramaticVelocityRoughness: viewModel.rendering.dramaticVelocityRoughness,
-                        dramaticNoiseFrequency: viewModel.rendering.dramaticNoiseFrequency,
-                        isDramaticPass: renderPass.name == "dramatic"
+                        influenceThreshold: viewModel.rendering.influenceThreshold
                     )
                     .allowsHitTesting(false)
                     .blendMode(.multiply)
@@ -1322,11 +1190,7 @@ struct SplatterEditorView: View {
                                     dots: viewModel.metalData.dots,
                                     splatColor: renderPass.color,
                                     renderMask: renderPass.renderMask,
-                                    influenceThreshold: viewModel.rendering.influenceThreshold,
-                                    dramaticNoiseAmplitude: viewModel.rendering.dramaticNoiseAmplitude,
-                                    dramaticVelocityRoughness: viewModel.rendering.dramaticVelocityRoughness,
-                                    dramaticNoiseFrequency: viewModel.rendering.dramaticNoiseFrequency,
-                                    isDramaticPass: renderPass.name == "dramatic"
+                                    influenceThreshold: viewModel.rendering.influenceThreshold
                                 )
                                 .allowsHitTesting(false)
                                 .blendMode(.multiply)
@@ -1497,117 +1361,6 @@ struct ParameterControlPanel: View {
                                         Toggle("Small", isOn: $viewModel.rendering.foregroundSmallDots)
                                             .toggleStyle(SwitchToggleStyle(tint: .orange))
                                     }
-                                }
-                                .padding(.top, 8)
-                            }
-                        }
-                    }
-                }
-                
-                // Dramatic Effects Controls
-                GroupBox("Dramatic Effects") {
-                    VStack(spacing: 12) {
-                        VStack {
-                            HStack {
-                                Toggle("Dramatic Pass", isOn: $viewModel.rendering.dramaticPassEnabled)
-                                Spacer()
-                            }
-                            if viewModel.rendering.dramaticPassEnabled {
-                                VStack {
-                                    if #available(iOS 14.0, *) {
-                                        ColorPicker("Dramatic Color", selection: $viewModel.rendering.dramaticPassColor)
-                                    } else {
-                                        HStack {
-                                            Text("Dramatic Color")
-                                            Spacer()
-                                            Rectangle()
-                                                .fill(viewModel.rendering.dramaticPassColor)
-                                                .frame(width: 30, height: 30)
-                                                .cornerRadius(6)
-                                        }
-                                    }
-                                }
-                                HStack {
-                                    Text("Opacity: \(viewModel.rendering.dramaticPassOpacity, specifier: "%.2f")")
-                                    Spacer()
-                                }
-                                Slider(value: $viewModel.rendering.dramaticPassOpacity, in: 0...1)
-                                
-                                // Dramatic pass dot type controls
-                                VStack(spacing: 8) {
-                                    Text("Dot Types").font(.subheadline).foregroundColor(.secondary)
-                                    HStack {
-                                        Toggle("Central", isOn: $viewModel.rendering.dramaticCentralDot)
-                                            .toggleStyle(SwitchToggleStyle(tint: .red))
-                                        Toggle("Large", isOn: $viewModel.rendering.dramaticLargeDots)
-                                            .toggleStyle(SwitchToggleStyle(tint: .red))
-                                    }
-                                    HStack {
-                                        Toggle("Medium", isOn: $viewModel.rendering.dramaticMediumDots)
-                                            .toggleStyle(SwitchToggleStyle(tint: .red))
-                                        Toggle("Small", isOn: $viewModel.rendering.dramaticSmallDots)
-                                            .toggleStyle(SwitchToggleStyle(tint: .red))
-                                    }
-                                }
-                                .padding(.top, 8)
-                                
-                                // Dramatic effect parameters
-                                VStack(spacing: 8) {
-                                    Text("Effect Parameters").font(.subheadline).foregroundColor(.secondary)
-                                    
-                                    HStack {
-                                        Text("Velocity X: \(viewModel.rendering.dramaticVelocityX, specifier: "%.2f")")
-                                        Spacer()
-                                    }
-                                    Slider(value: $viewModel.rendering.dramaticVelocityX, in: 0.0...3.0)
-                                    
-                                    HStack {
-                                        Text("Velocity Y: \(viewModel.rendering.dramaticVelocityY, specifier: "%.2f")")
-                                        Spacer()
-                                    }
-                                    Slider(value: $viewModel.rendering.dramaticVelocityY, in: 0.0...3.0)
-                                    
-                                    HStack {
-                                        Text("Force: \(viewModel.rendering.dramaticForce, specifier: "%.2f")")
-                                        Spacer()
-                                    }
-                                    Slider(value: $viewModel.rendering.dramaticForce, in: 0.0...1.0)
-                                    
-                                    HStack {
-                                        Text("Central Elongation: \(viewModel.rendering.dramaticCentralElongation, specifier: "%.1f")")
-                                        Spacer()
-                                    }
-                                    Slider(value: $viewModel.rendering.dramaticCentralElongation, in: 1.0...10.0)
-                                    
-                                    HStack {
-                                        Text("Particle Elongation: \(viewModel.rendering.dramaticParticleElongation, specifier: "%.1f")")
-                                        Spacer()
-                                    }
-                                    Slider(value: $viewModel.rendering.dramaticParticleElongation, in: 1.0...5.0)
-                                    
-                                    HStack {
-                                        Text("Time Elongation: \(viewModel.rendering.dramaticTimeElongation, specifier: "%.1f")")
-                                        Spacer()
-                                    }
-                                    Slider(value: $viewModel.rendering.dramaticTimeElongation, in: 1.0...8.0)
-                                    
-                                    HStack {
-                                        Text("Noise Amplitude: \(viewModel.rendering.dramaticNoiseAmplitude, specifier: "%.2f")")
-                                        Spacer()
-                                    }
-                                    Slider(value: $viewModel.rendering.dramaticNoiseAmplitude, in: 0.0...2.0)
-                                    
-                                    HStack {
-                                        Text("Velocity Roughness: \(viewModel.rendering.dramaticVelocityRoughness, specifier: "%.2f")")
-                                        Spacer()
-                                    }
-                                    Slider(value: $viewModel.rendering.dramaticVelocityRoughness, in: 0.0...3.0)
-                                    
-                                    HStack {
-                                        Text("Noise Frequency: \(viewModel.rendering.dramaticNoiseFrequency, specifier: "%.1f")")
-                                        Spacer()
-                                    }
-                                    Slider(value: $viewModel.rendering.dramaticNoiseFrequency, in: 10.0...50.0)
                                 }
                                 .padding(.top, 8)
                             }
@@ -1786,10 +1539,6 @@ struct MetalOverlayView: UIViewRepresentable {
     let splatColor: SIMD3<Float>
     let renderMask: UInt32
     let influenceThreshold: Float
-    let dramaticNoiseAmplitude: Float
-    let dramaticVelocityRoughness: Float
-    let dramaticNoiseFrequency: Float
-    let isDramaticPass: Bool
     
     func makeUIView(context: UIViewRepresentableContext<MetalOverlayView>) -> MTKView {
         let mtkView = MTKView()
@@ -1822,33 +1571,18 @@ struct MetalOverlayView: UIViewRepresentable {
         uiView.setNeedsDisplay()
     }
     func makeCoordinator() -> Coordinator {
-        Coordinator(
-            splatColor: splatColor, 
-            influenceThreshold: influenceThreshold,
-            dramaticNoiseAmplitude: dramaticNoiseAmplitude,
-            dramaticVelocityRoughness: dramaticVelocityRoughness,
-            dramaticNoiseFrequency: dramaticNoiseFrequency,
-            isDramaticPass: isDramaticPass
-        )
+        Coordinator(splatColor: splatColor, influenceThreshold: influenceThreshold)
     }
     class Coordinator: NSObject, MTKViewDelegate {
         var splatColor: SIMD3<Float>
         var influenceThreshold: Float
-        var dramaticNoiseAmplitude: Float
-        var dramaticVelocityRoughness: Float
-        var dramaticNoiseFrequency: Float
-        var isDramaticPass: Bool
         let stateManager: MetalStateManager
         private let metalService: MetalRenderService
         private var frameCount: Int = 0
         
-        init(splatColor: SIMD3<Float>, influenceThreshold: Float, dramaticNoiseAmplitude: Float, dramaticVelocityRoughness: Float, dramaticNoiseFrequency: Float, isDramaticPass: Bool) {
+        init(splatColor: SIMD3<Float>, influenceThreshold: Float) {
             self.splatColor = splatColor
             self.influenceThreshold = influenceThreshold
-            self.dramaticNoiseAmplitude = dramaticNoiseAmplitude
-            self.dramaticVelocityRoughness = dramaticVelocityRoughness
-            self.dramaticNoiseFrequency = dramaticNoiseFrequency
-            self.isDramaticPass = isDramaticPass
             self.stateManager = MetalStateManager()
             self.metalService = MetalRenderService()
             super.init()
@@ -1885,11 +1619,7 @@ struct MetalOverlayView: UIViewRepresentable {
                 splatColor: splatColor,
                 renderMask: stateManager.renderMask,
                 influenceThreshold: influenceThreshold,
-                aspectRatio: aspectRatio,
-                dramaticNoiseAmplitude: dramaticNoiseAmplitude,
-                dramaticVelocityRoughness: dramaticVelocityRoughness,
-                dramaticNoiseFrequency: dramaticNoiseFrequency,
-                isDramaticPass: isDramaticPass
+                aspectRatio: aspectRatio
             )
             
             PerformanceMonitor.endRenderTiming()
@@ -2290,7 +2020,7 @@ class MetalRenderService {
         }
     }
     
-    func render(device: MTLDevice, drawable: CAMetalDrawable, dots: [MetalDot], splatColor: SIMD3<Float>, renderMask: UInt32, influenceThreshold: Float, aspectRatio: Float, dramaticNoiseAmplitude: Float = 0.3, dramaticVelocityRoughness: Float = 0.4, dramaticNoiseFrequency: Float = 20.0, isDramaticPass: Bool = false) -> Bool {
+    func render(device: MTLDevice, drawable: CAMetalDrawable, dots: [MetalDot], splatColor: SIMD3<Float>, renderMask: UInt32, influenceThreshold: Float, aspectRatio: Float) -> Bool {
         guard setupPipeline(device: device),
               let pipelineState = pipelineState,
               let commandQueue = device.makeCommandQueue(),
@@ -2349,11 +2079,7 @@ class MetalRenderService {
             dotCount: UInt32(dots.count),
             renderMask: renderMask,
             influenceThreshold: influenceThreshold,
-            aspectRatio: aspectRatio,
-            dramaticNoiseAmplitude: dramaticNoiseAmplitude,
-            dramaticVelocityRoughness: dramaticVelocityRoughness,
-            dramaticNoiseFrequency: dramaticNoiseFrequency,
-            isDramaticPass: isDramaticPass ? 1 : 0
+            aspectRatio: aspectRatio
         )
         
         uniformsBuffer.contents().copyMemory(
@@ -2408,10 +2134,6 @@ struct FragmentUniforms {
     let renderMask: UInt32
     let influenceThreshold: Float
     let aspectRatio: Float
-    let dramaticNoiseAmplitude: Float
-    let dramaticVelocityRoughness: Float
-    let dramaticNoiseFrequency: Float
-    let isDramaticPass: UInt32
 }
 
 // MARK: - Metal Shaders
@@ -2434,10 +2156,6 @@ struct FragmentUniforms {
     uint renderMask;
     float influenceThreshold;
     float aspectRatio;
-    float dramaticNoiseAmplitude;
-    float dramaticVelocityRoughness;
-    float dramaticNoiseFrequency;
-    uint isDramaticPass;
 };
 
 struct VertexOut {
@@ -2525,14 +2243,10 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
         // Smooth falloff with noise-based edge distortion
         float normalizedDist = distance / effectiveRadius;
         
-        // Add organic edge distortion using configurable noise parameters
-        float noiseFreq = uniforms.isDramaticPass > 0 ? uniforms.dramaticNoiseFrequency : 20.0;
-        float noiseAmp = uniforms.isDramaticPass > 0 ? uniforms.dramaticNoiseAmplitude : 0.3;
-        float velRoughness = uniforms.isDramaticPass > 0 ? uniforms.dramaticVelocityRoughness : 0.4;
-        
-        float2 noiseCoord = fragCoord * noiseFreq + dot.velocity * 10.0;
-        float edgeNoise = fbm(noiseCoord) * noiseAmp;
-        float velocityRoughness = length(dot.velocity) * velRoughness;
+        // Add dramatic organic edge distortion using noise
+        float2 noiseCoord = fragCoord * 30.0 + dot.velocity * 10.0; // Higher frequency and velocity influence
+        float edgeNoise = fbm(noiseCoord) * 0.8; // Much more dramatic noise amplitude
+        float velocityRoughness = length(dot.velocity) * 1.2; // Much more roughness for high velocity
         float distortedDist = normalizedDist + edgeNoise * velocityRoughness;
         
         float edgeFeather = 0.8 + 0.2 * length(dot.velocity); // More feathering for high velocity
